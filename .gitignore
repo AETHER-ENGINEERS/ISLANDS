@@ -8,3 +8,7 @@ core.json
 build/
 harbor/bin/
 harbor/obj/
+
+# .NET builds
+**/bin/
+**/obj/

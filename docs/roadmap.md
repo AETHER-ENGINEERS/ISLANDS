@@ -50,6 +50,7 @@ throughout the move, and later one ferry among others.
    - The threads panel.
    - A vault browser and editor: AvalonEdit, Markdig, WPF-Math.
    - Per-monitor DPI aware.
+   *(first version: PR #6; see ferry/README.md)*
 4b. **The gateway for other devices.** Off by default, with pairing codes kept only as their SHA-256 and removable at
    any time.
    - A phone reaches the island over Tailscale, an Xbox over the home network.
