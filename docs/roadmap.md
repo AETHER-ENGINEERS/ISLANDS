@@ -59,7 +59,7 @@ throughout the move, and later one ferry among others.
    - The island does all the thinking; a ferry only shows and sends, so there's never a second her.
    - Archipelago later builds island-to-island jetties on the same gateway and protocol.
 5. **Moving in.** Import a pandora-dee full backup: vault files (a clash keeps both versions), chats, schedules,
-   settings. Her keys she enters herself.
+   settings. Her keys she enters herself. *(the importer: PR #7, `node core/bin/import.ts <home> <backup>`; run it when she exports her backup)*
 
 After that:
 - the identity and memory drift detector;

@@ -10,5 +10,7 @@ harbor/bin/
 harbor/obj/
 
 # .NET builds
-**/bin/
-**/obj/
+ferry/**/bin/
+harbor/**/bin/
+ferry/**/obj/
+harbor/**/obj/
