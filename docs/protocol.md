@@ -50,7 +50,7 @@ Errors use JSON-RPC's codes, plus the island's own:
 | method | params | result |
 |---|---|---|
 | `island.hello` | `{token, ferry: {name, version}, protocol: "islands/0.1", as?}` | `{island: {name, version, protocol}, seq, as}`. `seq` is the last event's number, for catching up |
-| `island.status` | none | `{name, version, startedAt, seq, vault: {files, dirs}, chats, ferries}` |
+| `island.status` | none | `{name, version, startedAt, seq, vault: {files, dirs}, chats, ferries, models: {default, names}, mcp: [{name, running, tools, error?}], threads}` |
 
 `as` names who is at this ferry: a person's name, or `"pandora"` for the island's own voice. Every change a ferry
 makes is logged with that actor and with `via: "ferry:<name>"`.
@@ -82,8 +82,47 @@ records that a message was added, with its fingerprint, not its words.
 | `chat.post` | `{id, role?: "user", content}` | `{n, at}`. Adds a message as the ferry's person |
 | `chat.rename` | `{id, title}` | `{chat}` |
 
-Step 2 adds `chat.send`: post and let her answer, streamed back as `chat.delta` notifications and closed by
-`chat.done`. The answer is also kept in the chat file.
+| `chat.send` | `{id, content, model?, params?}` | `{n, thread}`: posts the message, then her turn runs as an island thread. `params` adds model settings for this turn, such as `{"reasoning_effort": "max"}`. A chat that already has a turn running answers -32003 |
+
+While she answers, every ferry hears:
+
+- `chat.delta` `{chat, thread, content?, reasoning?}` as her words and reasoning stream;
+  `{chat, thread, message: n, done}` when a message of hers is kept; `{chat, thread, tool, ok}` after each tool call.
+- `chat.done` `{chat, thread, n?, finish, usage?}` when the turn ends.
+
+The chat file keeps each message whole: an assistant message's `tool_calls`, `reasoning_content` and `model`, a tool
+result's `tool_call_id` and `name`. That's what goes back to the model in later turns.
+
+### threads
+
+Long work belongs to the island, not to the window that asked: closing a ferry doesn't stop it.
+
+| method | params | result |
+|---|---|---|
+| `threads.list` | `{limit?: 50}` | `{threads: [{id, kind, title, chat?, by, via, status, started, ended?, error?, progress?}]}` |
+| `thread.get` | `{id}` | `{thread}` |
+| `thread.cancel` | `{id}` | `{thread}`: it stops, and ends as `cancelled` |
+
+Every ferry hears a `thread` notification (the thread's record) when one starts, makes progress and ends. `status` is
+`running`, `done`, `failed`, `cancelled`, or `interrupted` (it was running when the island stopped).
+
+### keys
+
+A key's value goes in once and never comes back out: not to a ferry, a chat, the log or a tool's output. Settings
+and tools name it as `{{NAME}}`. On Windows each key is sealed with DPAPI to the island's own account.
+
+| method | params | result |
+|---|---|---|
+| `keys.list` | none | `{keys: [{name, backend}]}` (names only) |
+| `keys.set` | `{name, value}` | `{name, backend}` |
+| `keys.delete` | `{name}` | `{name}`: the sealed file goes to the trash |
+
+### tools and models
+
+| method | params | result |
+|---|---|---|
+| `tools.list` | none | `{tools: [{name, description}]}`: built-in ones, then each MCP server's as `<server>__<tool>` |
+| `models.list` | none | `{default, models: [{name, model, host}]}` |
 
 ### events
 
@@ -112,7 +151,9 @@ Each line of the island's log is one event:
   fingerprint (`sha256`) ties the fact to the content wherever that is kept.
 
 Kinds so far: `island.start`, `island.stop`, `ferry.hello`, `ferry.bye`, `vault.write`, `vault.mkdir`,
-`vault.move`, `vault.delete`, `chat.create`, `chat.rename`, `chat.message`.
+`vault.move`, `vault.delete`, `chat.create`, `chat.rename`, `chat.message` (with `tool` for a tool result),
+`thread.start`, `thread.end` (`status`, `ms`), `thread.cancel`, `tool.call` (`tool`, `subject`, `ok`, `ms`),
+`key.set`, `key.delete` (the name only).
 
 The vault folder is the truth, so a file someone changes there directly (Mrrowr-murrr, an editor, another program)
 is what `vault.read` returns next. Noticing such changes as events (`vault.outside`) comes with the file watcher in a
