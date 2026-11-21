@@ -44,6 +44,7 @@ const stop = async (why: string) => {
   stopping = true;
   island.log.append({ actor: "island", via: "core", kind: "island.stop", why });
   await door.close();
+  island.shutdown();
   process.exit(0);
 };
 process.on("SIGINT", () => void stop("SIGINT"));

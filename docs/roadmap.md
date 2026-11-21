@@ -38,6 +38,9 @@ throughout the move, and later one ferry among others.
      `mode_list`).
    - Model settings per model, such as `reasoning_effort` and prompt-cache lifetimes. The full assistant message stays
      in multi-turn history, and sampling settings a model fixes aren't sent.
+   *(done: PR #3)*
+2b. **Schedules and the heartbeat.** Her schedules in plain English and the HEARTBEAT.md wake-ups, run by the island as
+   threads, so they keep their time when no window is open.
 3. **The harbor.** The .NET 10 service host, the virtual account, the guarded pipe, and install and uninstall scripts.
    Done when the island survives the window closing, the person logging out, and a reboot.
 4. **The WPF ferry.**

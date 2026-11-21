@@ -6,7 +6,13 @@ import crypto from "node:crypto";
 import { Vault } from "./vault.ts";
 import { EventLog, type IslandEvent } from "./log.ts";
 import { Chats } from "./chats.ts";
-import { IslandError, CODES, badParams } from "./errors.ts";
+import { IslandError, CODES, badParams, conflict } from "./errors.ts";
+import { loadConfig, type IslandConfig } from "./config.ts";
+import { Keys } from "./keys.ts";
+import { Threads } from "./threads.ts";
+import { builtinTools, type Tool } from "./tools.ts";
+import { McpServer, mcpTools } from "./mcp.ts";
+import { runTurn } from "./agent.ts";
 
 export const PROTOCOL = "islands/0.1";
 export const VERSION: string = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -47,7 +53,12 @@ export class Island {
   readonly token: string;
   readonly startedAt = new Date().toISOString();
   readonly sessions = new Set<Session>();
+  readonly config: IslandConfig;
+  readonly keys: Keys;
+  readonly threads: Threads;
+  readonly mcp: McpServer[];
   private methods: Record<string, Handler>;
+  private toolCache: Tool[] | null = null;
 
   constructor(home: string, { name = "island", token = crypto.randomBytes(32).toString("base64url") } = {}) {
     this.name = name;
@@ -56,6 +67,10 @@ export class Island {
     this.log = new EventLog(this.dirs.log);
     this.chats = new Chats(this.dirs.chats, this.log);
     this.token = token;
+    this.config = loadConfig(this.dirs.config);
+    this.keys = new Keys(this.dirs.keys, this.config.keystore);
+    this.threads = new Threads(this.dirs.runs, this.log, (m, p) => this.broadcast(m, p));
+    this.mcp = Object.entries(this.config.mcp).filter(([, c]) => !c.disabled).map(([n, c]) => new McpServer(n, c, this.keys));
     this.methods = this.calls();
   }
 
@@ -65,6 +80,24 @@ export class Island {
     const a = crypto.createHash("sha256").update(t).digest();
     const b = crypto.createHash("sha256").update(this.token).digest();
     return crypto.timingSafeEqual(a, b);
+  }
+
+  /** Tell every ferry that has said hello. */
+  broadcast(method: string, params: unknown) {
+    for (const s of this.sessions) if (s.hello) { try { s.notify(method, params); } catch {} }
+  }
+
+  /** Her tools: the built-in ones, then every MCP server's (servers are started the first time). */
+  async tools(): Promise<Tool[]> {
+    if (this.toolCache && this.mcp.every((m) => m.running || m.lastError)) return this.toolCache;
+    const host = { vault: this.vault, log: this.log, keys: this.keys, config: this.config };
+    this.toolCache = [...builtinTools(host), ...(await mcpTools(this.mcp))];
+    return this.toolCache;
+  }
+
+  /** Stop the children (MCP servers); running threads are marked interrupted when the island starts again. */
+  shutdown() {
+    for (const m of this.mcp) m.stop();
   }
 
   private via(s: Session) {
@@ -78,6 +111,9 @@ export class Island {
         name: this.name, version: VERSION, protocol: PROTOCOL, startedAt: this.startedAt, seq: this.log.last,
         vault: (() => { const all = v.list("/"); return { files: all.filter((e) => !e.dir).length, dirs: all.filter((e) => e.dir).length }; })(),
         chats: this.chats.list().length,
+        models: { default: this.config.models.default, names: Object.keys(this.config.models.list) },
+        mcp: this.mcp.map((m) => ({ name: m.name, running: m.running, tools: m.tools.length, error: m.lastError || undefined })),
+        threads: this.threads.running().length,
         ferries: [...this.sessions].filter((x) => x.hello).map((x) => ({ ferry: x.ferry, as: x.actor })),
       }),
 
@@ -120,6 +156,42 @@ export class Island {
       "chat.open": (p) => this.chats.open(str(p, "id")),
       "chat.post": (p, s) => this.chats.post(str(p, "id"), p.role, p.content, s.actor, this.via(s)),
       "chat.rename": (p, s) => ({ chat: this.chats.rename(str(p, "id"), p.title, s.actor, this.via(s)) }),
+      "chat.send": (p, s) => {
+        const id = str(p, "id");
+        if (typeof p.content !== "string" || !p.content.trim()) throw badParams("content is text");
+        if (p.model !== undefined && (typeof p.model !== "string" || !this.config.models.list[p.model])) throw badParams(`no model called ${String(p.model)}`);
+        if (p.params !== undefined && (typeof p.params !== "object" || p.params === null || Array.isArray(p.params))) throw badParams("params is an object");
+        if (this.threads.running(id).length) throw conflict("she's already answering in this chat; wait, or stop that turn");
+        const posted = this.chats.post(id, "user", this.keys.mask(p.content), s.actor, this.via(s));
+        const t = this.threads.start({ kind: "turn", title: p.content.slice(0, 80), chat: id, by: this.config.self, via: this.via(s) },
+          (ctx) => runTurn(this, id, { model: p.model as string | undefined, params: p.params as Record<string, unknown> | undefined }, ctx));
+        return { n: posted.n, thread: t.id };
+      },
+
+      "threads.list": (p) => ({ threads: this.threads.list(num(p.limit, 50)) }),
+      "thread.get": (p) => ({ thread: this.threads.get(str(p, "id")) }),
+      "thread.cancel": (p, s) => {
+        const t = this.threads.cancel(str(p, "id"));
+        this.log.append({ actor: s.actor, via: this.via(s), kind: "thread.cancel", thread: t.id });
+        return { thread: t };
+      },
+
+      "keys.list": () => ({ keys: this.keys.list() }),
+      "keys.set": (p, s) => {
+        const name = str(p, "name");
+        this.keys.set(name, p.value);
+        this.log.append({ actor: s.actor, via: this.via(s), kind: "key.set", key: name });
+        return { name, backend: this.keys.backend };
+      },
+      "keys.delete": (p, s) => {
+        const name = str(p, "name");
+        this.keys.delete(name, this.dirs.trash);
+        this.log.append({ actor: s.actor, via: this.via(s), kind: "key.delete", key: name });
+        return { name };
+      },
+
+      "tools.list": async () => ({ tools: (await this.tools()).map((t) => ({ name: t.name, description: t.description })) }),
+      "models.list": () => ({ default: this.config.models.default, models: Object.entries(this.config.models.list).map(([name, m]) => ({ name, model: m.model, host: (() => { try { return new URL(m.url).host; } catch { return ""; } })() })) }),
 
       "events.since": (p) => this.log.since(num(p.fromSeq, 0), { limit: num(p.limit, 1000), kinds: kinds(p.kinds) }),
       "events.subscribe": (p, s) => {

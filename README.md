@@ -56,8 +56,13 @@ ferry presents in `island.hello`.
 
 ## Status
 
-Step 1 of [the roadmap](docs/roadmap.md): the core's vault, event log, chats and the ferry protocol, with tests on
-Windows and Linux.
+Steps 1 and 2 of [the roadmap](docs/roadmap.md), tested on Windows and Linux:
+- the core's vault, event log, chats and the ferry protocol;
+- her turn as an island thread: model routing with per-model settings, streaming to every window;
+- her tools: the vault, memory and journal, a real shell, and MCP servers as children;
+- a keystore sealed to the island's account.
+
+Settings: [docs/config.md](docs/config.md).
 
 ## License
 

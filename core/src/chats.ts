@@ -86,15 +86,17 @@ export class Chats {
     return { chat: { id: meta.id, title: meta.title, created: meta.created }, messages };
   }
 
-  post(id: string, role: unknown, content: unknown, actor: string, via: string) {
+  /** Add a message. `extra` keeps the rest of a model's message (tool_calls, reasoning_content, tool_call_id, name, model). */
+  post(id: string, role: unknown, content: unknown, actor: string, via: string, extra: Record<string, unknown> = {}) {
     if (typeof content !== "string") throw badParams("content is text");
     const r = role === undefined ? "user" : role;
     if (typeof r !== "string" || !ROLES.has(r)) throw badParams("role is user, assistant, system or tool");
     const { messages } = this.load(id);
     const at = new Date().toISOString();
     const n = messages.length ? messages[messages.length - 1].n + 1 : 1;
-    fs.appendFileSync(this.fileOf(id), JSON.stringify({ type: "message", n, role: r, content, at, by: actor }) + "\n");
-    this.log.append({ actor, via, kind: "chat.message", chat: id, n, role: r, sha256: sha256(content), bytes: Buffer.byteLength(content) });
+    const { type: _t, n: _n, role: _r, content: _c, at: _a, by: _b, ...rest } = extra;
+    fs.appendFileSync(this.fileOf(id), JSON.stringify({ type: "message", n, role: r, content, at, by: actor, ...rest }) + "\n");
+    this.log.append({ actor, via, kind: "chat.message", chat: id, n, role: r, sha256: sha256(content), bytes: Buffer.byteLength(content), ...(typeof rest.name === "string" ? { tool: rest.name } : {}) });
     return { n, at };
   }
 
