@@ -50,6 +50,15 @@ npm test
 node bin/island.ts <home> --name "<island name>"
 ```
 
+To move in from a pandora-dee or Jade Vault full backup ("Export everything"), stop the core and run:
+
+```sh
+node core/bin/import.ts <home> <backup.json[.gz]> --as "<your name>"
+```
+
+It brings in vault files (a file in both places keeps both versions), chats whole, and schedules (switched off). It
+leaves keys and settings out, and writes a report into her vault. Running it twice brings nothing in twice.
+
 `<home>` is the island's folder; it gets `vault/`, `chats/`, `log/`, `state/`, `keys/`, `runs/`, `config/`, `trash/`
 and `backups/`. Ferries find the core through `<home>/state/core.json`, which names its door and holds the token a
 ferry presents in `island.hello`.

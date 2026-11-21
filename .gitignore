@@ -13,3 +13,7 @@ harbor/obj/
 **/bin/
 **/obj/
 nuget-packages/
+ferry/**/bin/
+harbor/**/bin/
+ferry/**/obj/
+harbor/**/obj/
