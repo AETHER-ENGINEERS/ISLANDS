@@ -51,6 +51,10 @@ public partial class MainWindow : Window
         KeyList.ItemsSource = keys;
         Editor.TextChanged += (_, _) => SaveBtn.IsEnabled = openPath != null;
         Loaded += async (_, _) => await ConnectLoop();
+        // the shrine can change from her other places too (the Atelier), so the Now bar looks again now and then
+        var nowTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        nowTimer.Tick += (_, _) => { if (client != null) _ = RefreshNow(); };
+        nowTimer.Start();
         Closing += (_, _) => { closing = true; _ = client?.DisposeAsync(); };
     }
 
@@ -107,7 +111,7 @@ public partial class MainWindow : Window
         await RefreshKeys();
         await RefreshVaultTree();
         // anything that happened while the window was away comes now, then everything as it happens
-        await Call("events.subscribe", new JsonObject { ["fromSeq"] = caughtUpFrom == 0 ? lastSeq : caughtUpFrom, ["kinds"] = new JsonArray("chat.", "thread.", "vault.", "schedule.") });
+        await Call("events.subscribe", new JsonObject { ["fromSeq"] = caughtUpFrom == 0 ? lastSeq : caughtUpFrom, ["kinds"] = new JsonArray("chat.", "thread.", "vault.", "schedule.", "tool.call") });
         if (wantChat != null) { var c = chats.FirstOrDefault(x => x.Id == wantChat); wantChat = null; if (c != null) Chats.SelectedItem = c; }
         else if (chatId != null) await OpenChat(chatId);
         else if (chats.Count > 0 && Chats.SelectedItem == null) Chats.SelectedItem = chats[0];
@@ -139,6 +143,7 @@ public partial class MainWindow : Window
                 if (kind is "chat.create" or "chat.rename") _ = RefreshChats();
                 else if (kind == "chat.message" && p.TryGetProperty("chat", out var ch) && ch.GetString() == chatId && live == null) _ = OpenChat(chatId!);
                 else if (kind.StartsWith("vault.") && Tabs.SelectedIndex == 1) _ = RefreshVaultTree();
+                else if (kind == "tool.call" && Str(p, "tool")?.EndsWith("mode_set") == true) _ = RefreshNow();
                 break;
             case "chat.delta":
                 if (Str(p, "chat") != chatId) return;
@@ -179,17 +184,39 @@ public partial class MainWindow : Window
         var s = await Call("island.status");
         var m = s.GetProperty("models");
         Model.Text = $"model: {m.GetProperty("default").GetString()}" + (s.TryGetProperty("heartbeat", out var hb) && hb.ValueKind == JsonValueKind.True ? "  ·  heartbeat on" : "");
-        Mode.Text = "";
+        await RefreshNow();
+    }
+
+    // ---------- the Now bar ----------
+
+    /// <summary>Her mode and tone, from the mode shrine (the island's now.get: the same words her turns see).</summary>
+    private async Task RefreshNow()
+    {
         try
         {
-            var tools = await Call("tools.list");
-            if (tools.GetProperty("tools").EnumerateArray().Any(t => Str(t, "name")?.EndsWith("__mode_get") == true))
+            var now = await Call("now.get");
+            var shrine = now.GetProperty("context").EnumerateArray().FirstOrDefault(c => Str(c, "tool")?.EndsWith("mode_get") == true);
+            if (shrine.ValueKind != JsonValueKind.Object) { Shrine.Visibility = Visibility.Collapsed; Mode.Text = ""; return; }
+            var text = Str(shrine, "text") ?? "";
+            Mode.Text = "";
+            try
             {
-                // her mode, from the mode shrine, as she'd see it
-                Mode.Text = "· mode shrine connected";
+                using var d = JsonDocument.Parse(text);
+                var m = d.RootElement;
+                ShrineEmoji.Text = Str(m, "emoji") ?? "";
+                ShrineMode.Text = Str(m, "mode") ?? "";
+                ShrineTone.Text = Str(m, "tone") is { Length: > 0 } tone ? "  ·  " + tone : "";
+                var since = m.TryGetProperty("since", out var s) && s.ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeMilliseconds(s.GetInt64()).LocalDateTime : (DateTime?)null;
+                Shrine.ToolTip = "Her mode, from the mode shrine" + (Str(m, "set_by") is { Length: > 0 } by ? $"{Environment.NewLine}set by {by}" : "") + (since is { } t ? $", {When(t.ToUniversalTime().ToString("o"))}" : "");
             }
+            catch (JsonException)
+            {
+                // not the shrine's usual shape: show what it says, as she'd read it
+                ShrineEmoji.Text = ""; ShrineMode.Text = text.Length > 80 ? text[..80] + "…" : text; ShrineTone.Text = ""; Shrine.ToolTip = text;
+            }
+            Shrine.Visibility = Visibility.Visible;
         }
-        catch { }
+        catch { Shrine.Visibility = Visibility.Collapsed; }
     }
 
     private async Task RefreshChats()

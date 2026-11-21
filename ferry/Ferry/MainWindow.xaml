@@ -59,8 +59,15 @@
       <DockPanel>
         <Ellipse x:Name="Dot" Width="10" Height="10" Fill="{StaticResource Warn}" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <TextBlock x:Name="IslandName" Text="Island" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
-        <TextBlock x:Name="Mode" Foreground="{StaticResource Dim}" Margin="14,0,0,0" VerticalAlignment="Center"/>
         <TextBlock x:Name="Model" DockPanel.Dock="Right" Foreground="{StaticResource Dim}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+        <!-- the Now bar: her mode and tone, from the mode shrine, as her turns see it -->
+        <Border x:Name="Shrine" Visibility="Collapsed" Margin="14,0,14,0" Padding="10,2" CornerRadius="10" VerticalAlignment="Center" HorizontalAlignment="Left"
+                Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1">
+          <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+            <Run x:Name="ShrineEmoji" FontFamily="Segoe UI Emoji"/><Run Text=" "/><Run x:Name="ShrineMode" FontWeight="SemiBold" Foreground="{StaticResource Ink}"/><Run x:Name="ShrineTone" Foreground="{StaticResource Dim}"/>
+          </TextBlock>
+        </Border>
+        <TextBlock x:Name="Mode" Foreground="{StaticResource Dim}" Margin="14,0,0,0" VerticalAlignment="Center"/>
       </DockPanel>
     </Border>
 

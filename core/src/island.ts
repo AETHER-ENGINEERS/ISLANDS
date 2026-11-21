@@ -12,7 +12,7 @@ import { Keys } from "./keys.ts";
 import { Threads } from "./threads.ts";
 import { builtinTools, type Tool } from "./tools.ts";
 import { McpServer, mcpTools } from "./mcp.ts";
-import { runTurn } from "./agent.ts";
+import { runTurn, nowContext } from "./agent.ts";
 import { Providers } from "./providers.ts";
 import { Scheduler } from "./schedules.ts";
 
@@ -207,6 +207,7 @@ export class Island {
         return { name };
       },
 
+      "now.get": async () => ({ time: new Date().toISOString(), context: await nowContext(this, await this.tools(), AbortSignal.timeout(10000)) }),
       "tools.list": async () => ({ tools: (await this.tools()).map((t) => ({ name: t.name, description: t.description })) }),
       "providers.list": () => ({ providers: this.providers.list(), chain: this.providers.chain(undefined, "chat") }),
       "schedule.list": () => ({ schedules: this.scheduler.list() }),
