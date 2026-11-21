@@ -88,7 +88,9 @@ test("a turn: she thinks, uses her tools (vault, MCP, real shell), and answers; 
   assert.ok(!("temperature" in r1.body) && !("top_p" in r1.body), "sampling settings the model fixes aren't sent");
   assert.equal(r1.body.stream, true);
   assert.match(r1.body.messages[0].content, /# Pandora Dee Fae/);
-  assert.match(r1.body.messages[0].content, /shrine__mode_get: .*snack/, "the mode shrine's answer is in her prompt");
+  assert.ok(!/shrine__mode_get|Now:/.test(r1.body.messages[0].content), "the system prompt is only her files: a steady prefix");
+  const asked = r1.body.messages.find((m: any) => m.role === "user").content;
+  assert.match(asked, /^\[Now: time: .*shrine__mode_get: .*snack.*\]\n\nLeave a note/s, "what changes (time, mode) rides on the turn's message");
   assert.ok(r1.body.tools.some((t: any) => t.function.name === "shrine__mode_set") && r1.body.tools.some((t: any) => t.function.name === "shell"));
 
   // the whole assistant message goes back in later turns: reasoning and tool calls too

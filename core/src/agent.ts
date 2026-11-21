@@ -1,29 +1,40 @@
-// Her turn: what she reads (her own files make up her system prompt), what she thinks (the model, streamed to every
-// window that's watching), and what she does (her tools), until she answers. A turn is an island thread, so closing
-// the window that asked doesn't stop it; everything she says and does is kept in the chat file as it happens.
+// Her turn: what she reads (her own files are her system prompt), what she thinks (the model, streamed to every window
+// that's watching), and what she does (her tools), until she answers. A turn is an island thread, so closing the
+// window that asked doesn't stop it; everything she says and does is kept in the chat file as it happens.
+//
+// Two things keep it kind to caches and steady when a provider runs out:
+// - The system prompt is only her files, the same from turn to turn, so a provider's cache (and Ollama's prefix reuse)
+//   can keep it. What changes (the time, her mode) rides on the message that starts the turn, in the request only.
+// - Models are tried in order: the one asked for, then the fallbacks. A provider that says it's out rests until it
+//   resets; each message records which model wrote it, and the log records every switch and why.
 
 import type { Island } from "./island.ts";
 import type { ThreadContext } from "./threads.ts";
-import { complete, type ModelMessage } from "./models.ts";
+import { complete, ModelError, type ModelMessage, type Reply } from "./models.ts";
+import { DEFAULT_REST_MS } from "./providers.ts";
 import { spec, type Tool } from "./tools.ts";
 import type { Message } from "./chats.ts";
 
 const MAX_TOOL_RESULT = 100_000;
 
-/** Her system prompt: her own files, in order, then what the context tools say right now (her mode, the time). */
-export async function systemPrompt(island: Island, tools: Tool[], signal: AbortSignal): Promise<string> {
+/** Her system prompt: her own files, in order. The same from turn to turn while they don't change. */
+export function systemPrompt(island: Island): string {
   const parts: string[] = [];
   for (const p of island.config.system) {
     try { parts.push(island.vault.read(p).data.toString("utf8").trim()); } catch {}
   }
-  const now: string[] = [`- Time: ${new Date().toString()}`, `- Place: your island, "${island.name}". Your vault is real files on its disk; your shell runs real programs.`];
+  return island.keys.mask(parts.filter(Boolean).join("\n\n"));
+}
+
+/** What's true right now, once per turn: the time, the place, and what the context tools say (her mode). */
+export async function nowNote(island: Island, tools: Tool[], signal: AbortSignal): Promise<string> {
+  const now: string[] = [`time: ${new Date().toString()}`, `place: your island, "${island.name}" (your vault is real files; your shell runs real programs)`];
   for (const name of island.config.context) {
     const t = tools.find((x) => x.name === name);
     if (!t) continue;
-    try { now.push(`- ${name}: ${String(await t.run({}, { signal, actor: island.config.self, via: "core" })).slice(0, 2000)}`); } catch {}
+    try { now.push(`${name}: ${String(await t.run({}, { signal, actor: island.config.self, via: "core" })).slice(0, 2000)}`); } catch {}
   }
-  parts.push(`## Now\n${now.join("\n")}`);
-  return island.keys.mask(parts.filter(Boolean).join("\n\n"));
+  return island.keys.mask(`[Now: ${now.join("; ")}]`);
 }
 
 /** The chat as the model reads it: every message whole, as it was kept. */
@@ -39,35 +50,66 @@ export function history(messages: Message[], keepReasoning: boolean): ModelMessa
   });
 }
 
-export async function runTurn(island: Island, chat: string, opts: { model?: string; params?: Record<string, unknown> }, ctx: ThreadContext) {
-  const modelName = opts.model ?? island.config.models.default;
-  const cfg = island.config.models.list[modelName];
-  if (!cfg) throw new Error(`no model called "${modelName}" in config/island.json`);
+/** Ask the first model in the chain that can answer. Returns which one did. */
+async function ask(island: Island, chain: string[], build: (keepReasoning: boolean) => ModelMessage[], tools: Tool[], ctx: ThreadContext, opts: { params?: Record<string, unknown>; chat: string }) {
+  const tried: string[] = [];
+  let last: Error | undefined;
+  for (const name of chain) {
+    const ok = island.providers.check(name);
+    if (!ok.ok) { tried.push(`${name}: ${ok.why}`); continue; }
+    const r = island.providers.resolve(name);
+    const keep = r.cfg.keepReasoning !== false;
+    try {
+      const reply: Reply = await complete(r, island.keys, build(keep), tools.map(spec), {
+        extra: opts.params,
+        signal: ctx.signal,
+        onDelta: (d) => island.broadcast("chat.delta", { chat: opts.chat, thread: ctx.id, ...(d.content ? { content: island.keys.mask(d.content) } : {}), ...(d.reasoning ? { reasoning: island.keys.mask(d.reasoning) } : {}) }),
+      });
+      if (tried.length) island.log.append({ actor: island.config.self, via: `thread:${ctx.id}`, kind: "model.fallback", to: name, passed: tried.map((t) => t.split(":")[0]), chat: opts.chat });
+      return { reply, name, keep };
+    } catch (e) {
+      if (ctx.signal.aborted) throw e;
+      if (!(e instanceof ModelError) || e.emitted) throw e;   // words already went out: don't say them twice with another model
+      last = e;
+      if (e.limited) island.providers.rest(r.provider, e.retryAt ?? Date.now() + DEFAULT_REST_MS, e.message);
+      tried.push(`${name}: ${e.message}`);
+      island.log.append({ actor: island.config.self, via: `thread:${ctx.id}`, kind: "model.failed", model: name, provider: r.provider, status: e.status, limited: e.limited, ...(e.limited ? { restUntil: e.retryAt ?? Date.now() + DEFAULT_REST_MS } : {}) });
+      island.broadcast("chat.delta", { chat: opts.chat, thread: ctx.id, fallback: { from: name, reason: e.message.slice(0, 300) } });
+    }
+  }
+  throw new Error(`no model could answer. ${tried.join(" | ")}${last && !tried.length ? last.message : ""}`);
+}
+
+export async function runTurn(island: Island, chat: string, opts: { model?: string; params?: Record<string, unknown>; purpose?: string }, ctx: ThreadContext) {
+  const chain = island.providers.chain(opts.model, opts.purpose);
   const self = island.config.self;
   const via = `thread:${ctx.id}`;
-  const keep = cfg.keepReasoning !== false;
   const tools = await island.tools();
-  const specs = tools.map(spec);
   const say = (params: Record<string, unknown>) => island.broadcast("chat.delta", { chat, thread: ctx.id, ...params });
+  const system = systemPrompt(island);
+  const now = await nowNote(island, tools, ctx.signal);
+  // the message that started this turn: the last one a person (or a schedule) posted
+  const startN = [...island.chats.open(chat).messages].reverse().find((m) => m.role === "user")?.n;
 
   for (let step = 0; step < island.config.maxSteps; step++) {
     if (ctx.signal.aborted) throw new Error("stopped");
     ctx.progress(step ? `thinking (step ${step + 1})` : "thinking");
-    const messages: ModelMessage[] = [{ role: "system", content: await systemPrompt(island, tools, ctx.signal) }, ...history(island.chats.open(chat).messages, keep)];
-    const reply = await complete(cfg, island.keys, messages, specs, {
-      extra: opts.params,
-      signal: ctx.signal,
-      onDelta: (d) => say({ ...(d.content ? { content: island.keys.mask(d.content) } : {}), ...(d.reasoning ? { reasoning: island.keys.mask(d.reasoning) } : {}) }),
-    });
+    const kept = island.chats.open(chat).messages;
+    const build = (keep: boolean): ModelMessage[] => [
+      { role: "system", content: system },
+      ...history(kept, keep).map((m, i) => (kept[i].n === startN ? { ...m, content: `${now}\n\n${m.content ?? ""}` } : m)),
+    ];
+    const { reply, name } = await ask(island, chain, build, tools, ctx, { params: opts.params, chat });
+    const keep = island.providers.resolve(name).cfg.keepReasoning !== false;
     const m = reply.message;
-    const extra: Record<string, unknown> = { model: modelName };
+    const extra: Record<string, unknown> = { model: name };
     if (m.tool_calls) extra.tool_calls = m.tool_calls;
     if (keep && m.reasoning_content) extra.reasoning_content = island.keys.mask(m.reasoning_content);
     const posted = island.chats.post(chat, "assistant", island.keys.mask(m.content ?? ""), self, via, extra);
-    say({ message: posted.n, done: !m.tool_calls });
+    say({ message: posted.n, done: !m.tool_calls, model: name });
 
     if (!m.tool_calls?.length) {
-      island.broadcast("chat.done", { chat, thread: ctx.id, n: posted.n, finish: reply.finish, usage: reply.usage });
+      island.broadcast("chat.done", { chat, thread: ctx.id, n: posted.n, finish: reply.finish, usage: reply.usage, model: name });
       return;
     }
 
@@ -97,6 +139,6 @@ export async function runTurn(island: Island, chat: string, opts: { model?: stri
       if (ctx.signal.aborted) throw new Error("stopped");
     }
   }
-  island.chats.post(chat, "assistant", `(I stopped after ${island.config.maxSteps} steps in one turn. Say "go on" and I'll continue.)`, self, via, { model: modelName });
+  island.chats.post(chat, "assistant", `(I stopped after ${island.config.maxSteps} steps in one turn. Say "go on" and I'll continue.)`, self, via, {});
   island.broadcast("chat.done", { chat, thread: ctx.id, finish: "steps" });
 }

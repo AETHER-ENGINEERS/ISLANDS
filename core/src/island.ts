@@ -13,6 +13,8 @@ import { Threads } from "./threads.ts";
 import { builtinTools, type Tool } from "./tools.ts";
 import { McpServer, mcpTools } from "./mcp.ts";
 import { runTurn } from "./agent.ts";
+import { Providers } from "./providers.ts";
+import { Scheduler } from "./schedules.ts";
 
 export const PROTOCOL = "islands/0.1";
 export const VERSION: string = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -57,6 +59,8 @@ export class Island {
   readonly keys: Keys;
   readonly threads: Threads;
   readonly mcp: McpServer[];
+  readonly providers: Providers;
+  readonly scheduler: Scheduler;
   private methods: Record<string, Handler>;
   private toolCache: Tool[] | null = null;
 
@@ -70,6 +74,8 @@ export class Island {
     this.config = loadConfig(this.dirs.config);
     this.keys = new Keys(this.dirs.keys, this.config.keystore);
     this.threads = new Threads(this.dirs.runs, this.log, (m, p) => this.broadcast(m, p));
+    this.providers = new Providers(this.dirs.state, this.config, this.keys);
+    this.scheduler = new Scheduler(this);
     this.mcp = Object.entries(this.config.mcp).filter(([, c]) => !c.disabled).map(([n, c]) => new McpServer(n, c, this.keys));
     this.methods = this.calls();
   }
@@ -90,13 +96,21 @@ export class Island {
   /** Her tools: the built-in ones, then every MCP server's (servers are started the first time). */
   async tools(): Promise<Tool[]> {
     if (this.toolCache && this.mcp.every((m) => m.running || m.lastError)) return this.toolCache;
-    const host = { vault: this.vault, log: this.log, keys: this.keys, config: this.config };
+    const host = {
+      vault: this.vault, log: this.log, keys: this.keys, config: this.config,
+      notify: (text: string, urgent: boolean, ctx: { actor: string; via: string }) => {
+        const t = this.keys.mask(text);
+        this.log.append({ actor: ctx.actor, via: ctx.via, kind: "notice", urgent, bytes: Buffer.byteLength(t) });
+        this.broadcast("notice", { text: t, urgent, from: ctx.actor, at: new Date().toISOString() });
+      },
+    };
     this.toolCache = [...builtinTools(host), ...(await mcpTools(this.mcp))];
     return this.toolCache;
   }
 
   /** Stop the children (MCP servers); running threads are marked interrupted when the island starts again. */
   shutdown() {
+    this.scheduler.stop();
     for (const m of this.mcp) m.stop();
   }
 
@@ -114,6 +128,8 @@ export class Island {
         models: { default: this.config.models.default, names: Object.keys(this.config.models.list) },
         mcp: this.mcp.map((m) => ({ name: m.name, running: m.running, tools: m.tools.length, error: m.lastError || undefined })),
         threads: this.threads.running().length,
+        schedules: this.scheduler.all().length,
+        heartbeat: !!this.scheduler.heartbeat(),
         ferries: [...this.sessions].filter((x) => x.hello).map((x) => ({ ferry: x.ferry, as: x.actor })),
       }),
 
@@ -160,11 +176,12 @@ export class Island {
         const id = str(p, "id");
         if (typeof p.content !== "string" || !p.content.trim()) throw badParams("content is text");
         if (p.model !== undefined && (typeof p.model !== "string" || !this.config.models.list[p.model])) throw badParams(`no model called ${String(p.model)}`);
+        if (p.purpose !== undefined && typeof p.purpose !== "string") throw badParams("purpose is text");
         if (p.params !== undefined && (typeof p.params !== "object" || p.params === null || Array.isArray(p.params))) throw badParams("params is an object");
         if (this.threads.running(id).length) throw conflict("she's already answering in this chat; wait, or stop that turn");
         const posted = this.chats.post(id, "user", this.keys.mask(p.content), s.actor, this.via(s));
         const t = this.threads.start({ kind: "turn", title: p.content.slice(0, 80), chat: id, by: this.config.self, via: this.via(s) },
-          (ctx) => runTurn(this, id, { model: p.model as string | undefined, params: p.params as Record<string, unknown> | undefined }, ctx));
+          (ctx) => runTurn(this, id, { model: p.model as string | undefined, params: p.params as Record<string, unknown> | undefined, purpose: (p.purpose as string | undefined) ?? "chat" }, ctx));
         return { n: posted.n, thread: t.id };
       },
 
@@ -191,7 +208,29 @@ export class Island {
       },
 
       "tools.list": async () => ({ tools: (await this.tools()).map((t) => ({ name: t.name, description: t.description })) }),
-      "models.list": () => ({ default: this.config.models.default, models: Object.entries(this.config.models.list).map(([name, m]) => ({ name, model: m.model, host: (() => { try { return new URL(m.url).host; } catch { return ""; } })() })) }),
+      "providers.list": () => ({ providers: this.providers.list(), chain: this.providers.chain(undefined, "chat") }),
+      "schedule.list": () => ({ schedules: this.scheduler.list() }),
+      "schedule.create": (p, s) => ({ schedule: this.scheduler.create(p, s.actor, this.via(s)) }),
+      "schedule.update": (p, s) => ({ schedule: this.scheduler.update(str(p, "id"), p, s.actor, this.via(s)) }),
+      "schedule.delete": (p, s) => this.scheduler.delete(str(p, "id"), s.actor, this.via(s)),
+      "schedule.run": (p, s) => {
+        const thread = this.scheduler.run(str(p, "id"), s.actor, this.via(s));
+        if (!thread) throw conflict("it's still running from last time, or it had nothing to do (see schedule.list)");
+        return { thread };
+      },
+      "heartbeat.status": () => {
+        const hb = this.scheduler.list().find((x) => x.id === "heartbeat");
+        return hb ? { enabled: true, every: hb.when, model: hb.model ?? this.config.models.roles?.heartbeat ?? this.config.models.default, lastRun: hb.lastRun, lastStatus: hb.lastStatus, next: hb.next, running: hb.running, chat: hb.chat } : { enabled: false };
+      },
+      "models.list": () => ({
+        default: this.config.models.default, fallback: this.config.models.fallback ?? [], roles: this.config.models.roles ?? {},
+        models: Object.entries(this.config.models.list).map(([name, m]) => {
+          const ready = this.providers.check(name);
+          let host = "";
+          try { host = new URL(this.providers.resolve(name).cfg.url).host; } catch {}
+          return { name, model: m.model, provider: this.providers.providerOf(name), host, ready: ready.ok, ...(ready.ok ? {} : { why: ready.why }) };
+        }),
+      }),
 
       "events.since": (p) => this.log.since(num(p.fromSeq, 0), { limit: num(p.limit, 1000), kinds: kinds(p.kinds) }),
       "events.subscribe": (p, s) => {

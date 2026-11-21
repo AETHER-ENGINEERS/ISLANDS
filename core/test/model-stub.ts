@@ -2,9 +2,8 @@
 // real ones do, and keeps every request it got, so the tests can check what the island sent.
 import http from "node:http";
 
-export type Step =
-  | { text?: string; reasoning?: string; tools?: Array<{ name: string; args: Record<string, unknown> }>; slowMs?: number }
-  | ((body: any) => { text?: string; reasoning?: string; tools?: Array<{ name: string; args: Record<string, unknown> }>; slowMs?: number });
+type Plain = { text?: string; reasoning?: string; tools?: Array<{ name: string; args: Record<string, unknown> }>; slowMs?: number; fail?: number; retryAfter?: number; message?: string };
+export type Step = Plain | ((body: any) => Plain);
 
 export async function modelStub(script: Step[]) {
   const requests: Array<{ headers: http.IncomingHttpHeaders; body: any }> = [];
@@ -17,6 +16,10 @@ export async function modelStub(script: Step[]) {
       requests.push({ headers: req.headers, body });
       const step0 = script[Math.min(i++, script.length - 1)];
       const step = typeof step0 === "function" ? step0(body) : step0;
+      if (step.fail) {
+        res.writeHead(step.fail, { "content-type": "application/json", ...(step.retryAfter ? { "retry-after": String(step.retryAfter) } : {}) });
+        return res.end(JSON.stringify({ error: { message: step.message ?? "you've reached your session limit" } }));
+      }
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (delta: Record<string, unknown>, finish: string | null = null) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
       const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
