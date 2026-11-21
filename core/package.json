@@ -1,0 +1,19 @@
+{
+  "name": "@islands/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The island's core: vault, chats, event log and the ferry protocol, as a 64-bit Node service.",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "bin": { "island": "bin/island.ts" },
+  "scripts": {
+    "start": "node bin/island.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}
