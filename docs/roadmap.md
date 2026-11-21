@@ -29,7 +29,7 @@ throughout the move, and later one ferry among others.
 ## Steps
 
 1. **The core on its feet.** The vault on disk, the event log, chats as files, and the ferry protocol on a private
-   pipe or socket, with tests. *(this step)*
+   pipe or socket, with tests. *(done: PR #1)*
 2. **Thinking and doing.**
    - The agent loop with model routing, including `reasoning_effort` and prompt-cache options.
    - Built-in file tools, a real shell running as the island's account, and MCP servers as child processes.
