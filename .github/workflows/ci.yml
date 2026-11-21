@@ -23,3 +23,28 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  harbor:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build the harbor (self-contained)
+        run: dotnet publish harbor -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o build/harbor
+      - name: Harbor tests (console mode)
+        run: node --test harbor/test/harbor.test.mjs
+      - name: Install as a service, come in through the door, uninstall
+        shell: pwsh
+        run: |
+          $home2 = Join-Path $env:RUNNER_TEMP 'island-ci'
+          .\harbor\install.ps1 -IslandHome $home2 -Name 'CI island' -ServiceName IslandCI -Pipe island-ci
+          node harbor/test/service-check.mjs $home2 island-ci IslandCI
+          if ($LASTEXITCODE) { Get-Content "$home2\state\harbor.log" -ErrorAction SilentlyContinue; exit 1 }
+          .\harbor\uninstall.ps1 -ServiceName IslandCI
+          if (Get-Service IslandCI -ErrorAction SilentlyContinue) { throw 'the service is still there' }
+          if (-not (Test-Path "$home2\vault\hello.md")) { throw 'uninstalling touched the home' }

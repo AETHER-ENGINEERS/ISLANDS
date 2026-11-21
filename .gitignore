@@ -4,3 +4,7 @@ node_modules/
 home/
 *.token
 core.json
+# builds
+build/
+harbor/bin/
+harbor/obj/

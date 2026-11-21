@@ -44,7 +44,7 @@ throughout the move, and later one ferry among others.
    Anthropic-style wires), fallbacks in order, a model per purpose, providers resting when they're out, and a steady
    system prompt for caching. *(done: PR #4)*
 3. **The harbor.** The .NET 10 service host, the virtual account, the guarded pipe, and install and uninstall scripts.
-   Done when the island survives the window closing, the person logging out, and a reboot.
+   Done when the island survives the window closing, the person logging out, and a reboot. *(built: PR #5; installing it on the island's real home is the person's one step, as administrator)*
 4. **The WPF ferry.**
    - The chat list, and chat with streaming.
    - The threads panel.
