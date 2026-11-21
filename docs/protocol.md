@@ -122,6 +122,7 @@ and tools name it as `{{NAME}}`. On Windows each key is sealed with DPAPI to the
 
 | method | params | result |
 |---|---|---|
+| `now.get` | none | `{time, context: [{tool, text}]}`: what each tool in `context` says right now (her mode, from the mode shrine), the same words her turns see in the "Now" note. Only those tools run; the ferry's Now bar reads it |
 | `tools.list` | none | `{tools: [{name, description}]}`: built-in ones, then each MCP server's as `<server>__<tool>` |
 | `models.list` | none | `{default, fallback, roles, models: [{name, model, provider, host, ready, why?}]}` |
 | `providers.list` | none | `{providers: [{name, wire, status, until?, reason?, note?}], chain}`. `status` is `ready`, `pending`, `needs-key` or `resting` (out of its limit until `until`) |

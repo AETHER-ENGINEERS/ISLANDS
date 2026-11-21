@@ -12,3 +12,4 @@ harbor/obj/
 # .NET builds
 **/bin/
 **/obj/
+nuget-packages/

@@ -167,6 +167,15 @@ test("closing the window doesn't stop her: the turn finishes, and the window cat
   back.close();
 });
 
+test("now.get: the ferry's Now bar sees her mode as her turns do, and only the context tools run", async () => {
+  const f = await ferry();
+  const now = (await f.call("now.get")) as { time: string; context: Array<{ tool: string; text: string }> };
+  assert.ok(!Number.isNaN(Date.parse(now.time)));
+  assert.deepEqual(now.context.map((c) => c.tool), ["shrine__mode_get"]);
+  assert.ok(["snack", "forge"].includes(JSON.parse(now.context[0].text).mode));
+  f.close();
+});
+
 test("a thread that was running when the island stopped is marked interrupted on the next start", () => {
   const runs = path.join(home, "runs");
   fs.writeFileSync(path.join(runs, "turn-old-abc.json"), JSON.stringify({ id: "turn-old-abc", kind: "turn", title: "x", by: "pandora", via: "x", status: "running", started: new Date().toISOString() }));

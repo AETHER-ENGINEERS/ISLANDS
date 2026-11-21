@@ -29,12 +29,19 @@ export function systemPrompt(island: Island): string {
 /** What's true right now, once per turn: the time, the place, and what the context tools say (her mode). */
 export async function nowNote(island: Island, tools: Tool[], signal: AbortSignal): Promise<string> {
   const now: string[] = [`time: ${new Date().toString()}`, `place: your island, "${island.name}" (your vault is real files; your shell runs real programs)`];
+  for (const c of await nowContext(island, tools, signal)) now.push(`${c.tool}: ${c.text}`);
+  return island.keys.mask(`[Now: ${now.join("; ")}]`);
+}
+
+/** What each context tool says right now (her mode, from the mode shrine), for her turn and for the ferry's Now bar. */
+export async function nowContext(island: Island, tools: Tool[], signal: AbortSignal): Promise<Array<{ tool: string; text: string }>> {
+  const out: Array<{ tool: string; text: string }> = [];
   for (const name of island.config.context) {
     const t = tools.find((x) => x.name === name);
     if (!t) continue;
-    try { now.push(`${name}: ${String(await t.run({}, { signal, actor: island.config.self, via: "core" })).slice(0, 2000)}`); } catch {}
+    try { out.push({ tool: name, text: island.keys.mask(String(await t.run({}, { signal, actor: island.config.self, via: "core" })).slice(0, 2000)) }); } catch {}
   }
-  return island.keys.mask(`[Now: ${now.join("; ")}]`);
+  return out;
 }
 
 /** The chat as the model reads it: every message whole, as it was kept. */

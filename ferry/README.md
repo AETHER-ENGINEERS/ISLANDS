@@ -9,6 +9,8 @@ scaling, 115% included. There's no web view anywhere.
 
 ## What's in it
 
+- **Now bar:** her mode and tone from the mode shrine (`now.get`, the same words her turns see), at the top next to
+  the island's name. It looks again when she uses `mode_set`, and once a minute for changes made in her other places.
 - **Chats:** the list, a new chat, and her answers streaming in as she writes them.
   - Her thinking is folded away under each step.
   - Each tool call is one line (✓ or ✗) that opens to show the result.
