@@ -29,12 +29,15 @@ throughout the move, and later one ferry among others.
 ## Steps
 
 1. **The core on its feet.** The vault on disk, the event log, chats as files, and the ferry protocol on a private
-   pipe or socket, with tests. *(this step)*
+   pipe or socket, with tests. *(done: PR #1)*
 2. **Thinking and doing.**
    - The agent loop with model routing, including `reasoning_effort` and prompt-cache options.
    - Built-in file tools, a real shell running as the island's account, and MCP servers as child processes.
    - The thread manager: long tool work owned by the island, observable from any ferry.
-   - The keystore, and the mode shrine.
+   - The keystore, and the mode shrine (her existing MCP server, brought over as it is: `mode_get`, `mode_set`,
+     `mode_list`).
+   - Model settings per model, such as `reasoning_effort` and prompt-cache lifetimes. The full assistant message stays
+     in multi-turn history, and sampling settings a model fixes aren't sent.
 3. **The harbor.** The .NET 10 service host, the virtual account, the guarded pipe, and install and uninstall scripts.
    Done when the island survives the window closing, the person logging out, and a reboot.
 4. **The WPF ferry.**
@@ -42,6 +45,13 @@ throughout the move, and later one ferry among others.
    - The threads panel.
    - A vault browser and editor: AvalonEdit, Markdig, WPF-Math.
    - Per-monitor DPI aware.
+4b. **The gateway for other devices.** Off by default, with pairing codes kept only as their SHA-256 and removable at
+   any time.
+   - A phone reaches the island over Tailscale, an Xbox over the home network.
+   - First as a page in the device's browser, served by the gateway, then as native apps (a phone app; Xbox through
+     Developer Mode).
+   - The island does all the thinking; a ferry only shows and sends, so there's never a second her.
+   - Archipelago later builds island-to-island jetties on the same gateway and protocol.
 5. **Moving in.** Import a pandora-dee full backup: vault files (a clash keeps both versions), chats, schedules,
    settings. Her keys she enters herself.
 
