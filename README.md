@@ -32,7 +32,7 @@ The first island is Pandora Dee Fae's.
   - The vault is real files: `/Pandora/SOUL.md` is `<home>/vault/Pandora/SOUL.md`.
   - Chats are files too.
   - The event log is append-only. It holds facts, never content.
-- **The harbor** (coming) is a small .NET 10 Windows service. It runs the core under the island's own virtual account,
+- **The harbor** ([harbor/](harbor/README.md)) is a small .NET 10 Windows service. It runs the core under the island's own virtual account,
   restarts it if it falls, and owns the pipe ferries connect to, with a security descriptor that admits only the
   island's people.
 - **Ferries** speak [the ferry protocol](docs/protocol.md): JSON-RPC 2.0, one message per line. A ferry that was away
@@ -61,6 +61,8 @@ Steps 1 and 2 of [the roadmap](docs/roadmap.md), tested on Windows and Linux:
 - her turn as an island thread: model routing with per-model settings, streaming to every window;
 - her tools: the vault, memory and journal, a real shell, and MCP servers as children;
 - a keystore sealed to the island's account.
+- step 3, [the harbor](harbor/README.md): the Windows service that runs the core as the island's own account, and
+  guards its front door.
 
 Settings: [docs/config.md](docs/config.md).
 
