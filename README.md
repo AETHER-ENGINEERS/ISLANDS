@@ -63,6 +63,8 @@ Steps 1 and 2 of [the roadmap](docs/roadmap.md), tested on Windows and Linux:
 - a keystore sealed to the island's account.
 - step 3, [the harbor](harbor/README.md): the Windows service that runs the core as the island's own account, and
   guards its front door.
+- step 4, [the WPF ferry](ferry/README.md): a native window with chats streaming, threads, notices, her vault in an
+  editor, and keys going in sealed.
 
 Settings: [docs/config.md](docs/config.md).
 

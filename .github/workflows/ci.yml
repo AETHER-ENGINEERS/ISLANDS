@@ -48,3 +48,18 @@ jobs:
           .\harbor\uninstall.ps1 -ServiceName IslandCI
           if (Get-Service IslandCI -ErrorAction SilentlyContinue) { throw 'the service is still there' }
           if (-not (Test-Path "$home2\vault\hello.md")) { throw 'uninstalling touched the home' }
+
+  ferry:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Client tests (against the real core)
+        run: dotnet test ferry/Islands.Client.Tests
+      - name: Build the window (self-contained)
+        run: dotnet publish ferry/Ferry -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o build/ferry
