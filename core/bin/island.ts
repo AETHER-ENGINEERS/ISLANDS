@@ -36,6 +36,7 @@ try {
 const island = new Island(home, { name });
 const door = await listen(island);
 island.log.append({ actor: "island", via: "core", kind: "island.start", version: process.version, pid: process.pid });
+island.scheduler.start();
 console.log(`${name} is up. Home: ${island.dirs.home}. Door: ${door.endpoint}. Last event: ${island.log.last}.`);
 
 let stopping = false;

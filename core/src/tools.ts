@@ -17,6 +17,8 @@ export interface ToolHost {
   log: EventLog;
   keys: Keys;
   config: IslandConfig;
+  /** Put a notice on every open window (and in the log). */
+  notify?: (text: string, urgent: boolean, ctx: ToolCtx) => void;
 }
 export interface ToolCtx {
   signal: AbortSignal;
@@ -108,6 +110,11 @@ export function builtinTools(host: ToolHost): Tool[] {
         appendTo(p, `\n## ${new Date().toTimeString().slice(0, 5)}\n${text(a, "text")}\n`, ctx);
         return `Written in ${p}.`;
       },
+    },
+    {
+      name: "notify", description: "Put a notice on every open window, for something that needs your person's attention. Use it sparingly.",
+      parameters: obj({ text: s("What to say, short"), urgent: { type: "boolean", description: "True only if it can't wait" } }, ["text"]),
+      run: (a, ctx) => { if (!host.notify) return "No windows to notify."; host.notify(text(a, "text").slice(0, 1000), a.urgent === true, ctx); return "Notice sent."; },
     },
     {
       name: "shell",

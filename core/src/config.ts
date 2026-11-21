@@ -4,9 +4,25 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/** Where models come from, and how to talk to them. */
+export interface ProviderConfig {
+  /** "openai": Chat Completions (Ollama, Ollama Cloud, OpenAI, xAI, Groq, llama.cpp, Moonshot, Shapes …);
+   *  "anthropic": the Messages API; "aicord": not built yet (see docs/config.md) */
+  wire: "openai" | "anthropic" | "aicord";
+  /** Up to and including the version part: http://localhost:11434/v1, https://api.anthropic.com/v1 */
+  url?: string;
+  /** Values may name keys: { "Authorization": "Bearer {{OPENAI_API_KEY}}" } */
+  headers?: Record<string, string>;
+  /** "pending": listed but not used yet */
+  status?: "pending";
+  note?: string;
+}
+
 export interface ModelConfig {
+  /** A provider from `providers`; its url and headers are used unless the model sets its own */
+  provider?: string;
   /** An OpenAI-compatible endpoint, up to and including /v1 (Ollama: http://localhost:11434/v1) */
-  url: string;
+  url?: string;
   model: string;
   /** Extra headers; values may name keys: { "Authorization": "Bearer {{MOONSHOT_API_KEY}}" } */
   headers?: Record<string, string>;
@@ -30,7 +46,17 @@ export interface McpConfig {
 export interface IslandConfig {
   /** Who the island is, in its own events and messages */
   self: string;
-  models: { default: string; list: Record<string, ModelConfig> };
+  providers: Record<string, ProviderConfig>;
+  models: {
+    default: string;
+    /** Tried in order when the one asked for can't answer (it's down, out of its limit, or refuses) */
+    fallback?: string[];
+    /** A model per purpose: { "heartbeat": "kitti", "schedules": "k27" } */
+    roles?: Record<string, string>;
+    list: Record<string, ModelConfig>;
+  };
+  /** The heartbeat: off unless `every` is set. It reads `file` (her checklist) each time. */
+  heartbeat?: { every?: string; model?: string; file?: string; prompt?: string };
   /** Vault files that make up her system prompt, in order; missing ones are skipped */
   system: string[];
   /** Tools whose answer is added to the system prompt at the start of each turn (the mode shrine's mode_get) */
@@ -47,6 +73,7 @@ export interface IslandConfig {
 
 export const DEFAULTS: IslandConfig = {
   self: "pandora",
+  providers: {},
   models: { default: "local", list: { local: { url: "http://localhost:11434/v1", model: "qwen3:8b" } } },
   system: ["/Pandora/SOUL.md", "/Pandora/AGENTS.md", "/Pandora/SYSTEM.md", "/Pandora/Memory.md"],
   context: [],
@@ -71,6 +98,7 @@ export function loadConfig(configDir: string): IslandConfig {
     ...raw,
     models: { ...DEFAULTS.models, ...(raw.models ?? {}), list: { ...(raw.models?.list ?? DEFAULTS.models.list) } },
     shell: { ...DEFAULTS.shell, ...(raw.shell ?? {}) },
+    providers: raw.providers ?? {},
     mcp: raw.mcp ?? {},
   };
 }

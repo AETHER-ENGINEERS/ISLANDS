@@ -82,13 +82,14 @@ records that a message was added, with its fingerprint, not its words.
 | `chat.post` | `{id, role?: "user", content}` | `{n, at}`. Adds a message as the ferry's person |
 | `chat.rename` | `{id, title}` | `{chat}` |
 
-| `chat.send` | `{id, content, model?, params?}` | `{n, thread}`: posts the message, then her turn runs as an island thread. `params` adds model settings for this turn, such as `{"reasoning_effort": "max"}`. A chat that already has a turn running answers -32003 |
+| `chat.send` | `{id, content, model?, params?, purpose?}` | `{n, thread}`: posts the message, then her turn runs as an island thread. `model` picks one; otherwise the model for `purpose` (default `chat`) or the default, then the fallbacks. `params` adds model settings for this turn, such as `{"reasoning_effort": "max"}`. A chat that already has a turn running answers -32003 |
 
 While she answers, every ferry hears:
 
 - `chat.delta` `{chat, thread, content?, reasoning?}` as her words and reasoning stream;
   `{chat, thread, message: n, done}` when a message of hers is kept; `{chat, thread, tool, ok}` after each tool call.
-- `chat.done` `{chat, thread, n?, finish, usage?}` when the turn ends.
+- `chat.delta` `{chat, thread, fallback: {from, reason}}` when a model couldn't answer and the next one is asked.
+- `chat.done` `{chat, thread, n?, finish, usage?, model}` when the turn ends.
 
 The chat file keeps each message whole: an assistant message's `tool_calls`, `reasoning_content` and `model`, a tool
 result's `tool_call_id` and `name`. That's what goes back to the model in later turns.
@@ -122,7 +123,25 @@ and tools name it as `{{NAME}}`. On Windows each key is sealed with DPAPI to the
 | method | params | result |
 |---|---|---|
 | `tools.list` | none | `{tools: [{name, description}]}`: built-in ones, then each MCP server's as `<server>__<tool>` |
-| `models.list` | none | `{default, models: [{name, model, host}]}` |
+| `models.list` | none | `{default, fallback, roles, models: [{name, model, provider, host, ready, why?}]}` |
+| `providers.list` | none | `{providers: [{name, wire, status, until?, reason?, note?}], chain}`. `status` is `ready`, `pending`, `needs-key` or `resting` (out of its limit until `until`) |
+
+### schedules and the heartbeat
+
+Schedules run as island threads, with no window open. `when` is `every 30m`, `every 2h`, `daily 08:30`,
+`weekdays 09:00`, `weekends 10:00` or 5-field cron, in the island's local time.
+
+| method | params | result |
+|---|---|---|
+| `schedule.list` | none | `{schedules: [{id, name, when, prompt?, command?, model?, chat?, enabled, lastRun?, lastStatus?, next?, running?}]}`. The heartbeat is listed first when it's on |
+| `schedule.create` | `{name, when, prompt\|command, model?, enabled?}` | `{schedule}` |
+| `schedule.update` | `{id, name?, when?, prompt?, command?, model?, enabled?}` | `{schedule}` |
+| `schedule.delete` | `{id}` | `{id}` |
+| `schedule.run` | `{id}` | `{thread}`: runs it now. -32003 if it's still running, or had nothing to do |
+| `heartbeat.status` | none | `{enabled, every?, model?, lastRun?, lastStatus?, next?, running?, chat?}` |
+
+A schedule's prompt becomes a turn of hers in the schedule's own chat ("⏰ name"). A command's output is kept there
+too. Every ferry hears a `notice` notification `{text, urgent, from, at}` when she uses her `notify` tool.
 
 ### events
 
@@ -153,7 +172,9 @@ Each line of the island's log is one event:
 Kinds so far: `island.start`, `island.stop`, `ferry.hello`, `ferry.bye`, `vault.write`, `vault.mkdir`,
 `vault.move`, `vault.delete`, `chat.create`, `chat.rename`, `chat.message` (with `tool` for a tool result),
 `thread.start`, `thread.end` (`status`, `ms`), `thread.cancel`, `tool.call` (`tool`, `subject`, `ok`, `ms`),
-`key.set`, `key.delete` (the name only).
+`key.set`, `key.delete` (the name only), `model.failed` (`model`, `provider`, `status`, `limited`, `restUntil?`),
+`model.fallback` (`to`, `passed`), `schedule.create`, `schedule.update`, `schedule.delete`, `schedule.skip`,
+`notice` (`urgent`, `bytes`).
 
 The vault folder is the truth, so a file someone changes there directly (Mrrowr-murrr, an editor, another program)
 is what `vault.read` returns next. Noticing such changes as events (`vault.outside`) comes with the file watcher in a
