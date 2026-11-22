@@ -16,6 +16,10 @@ scaling, 115% included. There's no web view anywhere.
   - Each tool call is one line (✓ or ✗) that opens to show the result.
   - Markdown, code, lists and quotes render natively.
   - Ctrl+Enter sends. Stop ends her turn.
+- **Heartbeat:** whether her heartbeat is beating or paused, how often, on which model, the last beat and how it
+  went, and when the next one comes. Below that is what the last beat came to (her answer, with a link to its chat).
+  - Pause / Resume switches it without touching `config/island.json`. Resumed, it beats at its next time.
+  - Beat now runs one beat straight away. Stop this beat ends one that's running.
 - **Threads:** what's running on the island (turns, schedules, the heartbeat), with Stop on each.
 - **Notices:** when she uses `notify`, a bar across the top. Urgent ones bring the window forward with a sound.
 - **Vault:** her files as a tree, opened in an editor (AvalonEdit). Save writes back with `ifMtime`, so a file that
@@ -52,5 +56,5 @@ dotnet publish ferry/Ferry -c Release -r win-x64 --self-contained -p:PublishSing
   - that a wrong token gets nothing;
   - vault and chat round trips;
   - catching up from a seq, then live events.
-- `ferry.exe --home <home> --chat <id> [--send "<text>"] --snapshot out.png` draws the window to a PNG and closes: a
+- `ferry.exe --home <home> [--chat <id>] [--tab heartbeat] [--send "<text>"] --snapshot out.png` draws the window to a PNG and closes: a
   way to check how it looks with nobody at the screen. With `--send`, it says that first and waits for her answer.

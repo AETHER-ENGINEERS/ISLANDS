@@ -134,12 +134,13 @@ Schedules run as island threads, with no window open. `when` is `every 30m`, `ev
 
 | method | params | result |
 |---|---|---|
-| `schedule.list` | none | `{schedules: [{id, name, when, prompt?, command?, model?, chat?, enabled, lastRun?, lastStatus?, next?, running?}]}`. The heartbeat is listed first when it's on |
+| `schedule.list` | none | `{schedules: [{id, name, when, prompt?, command?, model?, chat?, enabled, lastRun?, lastStatus?, next?, running?}]}`. The heartbeat is listed first when it's set up (`enabled: false` while it's paused) |
 | `schedule.create` | `{name, when, prompt\|command, model?, enabled?}` | `{schedule}` |
-| `schedule.update` | `{id, name?, when?, prompt?, command?, model?, enabled?}` | `{schedule}` |
+| `schedule.update` | `{id, name?, when?, prompt?, command?, model?, enabled?}` | `{schedule}`. For the heartbeat, only `enabled` (pause or resume) |
 | `schedule.delete` | `{id}` | `{id}` |
 | `schedule.run` | `{id}` | `{thread}`: runs it now. -32003 if it's still running, or had nothing to do |
-| `heartbeat.status` | none | `{enabled, every?, model?, lastRun?, lastStatus?, next?, running?, chat?}` |
+| `heartbeat.status` | none | `{enabled, configured, paused?, every?, model?, lastRun?, lastStatus?, next?, running?, chat?, result?}`. `result` is `{text, at, model?}`: her last answer in the heartbeat's chat |
+| `heartbeat.set` | `{on}` | the same as `heartbeat.status`. Pauses (`false`) or resumes (`true`) it without changing `config/island.json`; resumed, it beats next at its next time, not at once for the beats it missed |
 
 A schedule's prompt becomes a turn of hers in the schedule's own chat ("⏰ name"). A command's output is kept there
 too. Every ferry hears a `notice` notification `{text, urgent, from, at}` when she uses her `notify` tool.

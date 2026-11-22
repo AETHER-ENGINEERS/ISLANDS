@@ -97,6 +97,8 @@ Put keys in with `keys.set` from a ferry.
   - reads `file` (default `/Pandora/HEARTBEAT.md`) fresh, and skips if the file is missing or empty;
   - runs a turn on the `heartbeat` role's model (or `heartbeat.model`) in its own chat;
   - `prompt` can replace the wording, with `{file}` and `{checklist}` filled in.
+  - a window can pause and resume it (`heartbeat.set`); the pause is kept in `state/heartbeat.json`, and this config
+    stays as it is.
 - She has a `notify` tool for anything that needs her person: it puts a notice on every open window.
 
 ## The rest

@@ -232,3 +232,36 @@ test("the heartbeat reads her checklist fresh, runs on its own model, and can no
   assert.deepEqual(notices.map((n) => [n.text, n.urgent]), [["The heartbeat found something.", true]]);
   f.close();
 });
+
+test("the heartbeat panel: what the last beat came to, and pausing it from a window without touching its config", async () => {
+  const f = await ferry();
+  const st = (await f.call("heartbeat.status")) as any;
+  assert.equal(st.configured, true);
+  assert.equal(st.paused, false);
+  assert.equal(st.result.text, "Heartbeat done.", "her last answer in the heartbeat's chat");
+  assert.ok(st.next, "on, so it has a next beat");
+
+  const paused = (await f.call("heartbeat.set", { on: false })) as any;
+  assert.equal(paused.paused, true);
+  assert.equal(paused.next, undefined, "paused: no next beat");
+  assert.equal(((await f.call("island.status")) as any).heartbeat, false);
+  const far = new Date(Date.now() + 3 * 3600_000);
+  assert.deepEqual(island.scheduler.tick(far), [], "paused: three hours on, it still doesn't beat");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, "config", "island.json"), "utf8")).heartbeat.every, "every 30m", "its config is left as it was");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, "state", "heartbeat.json"), "utf8")).enabled, false, "a restart remembers the pause");
+
+  // resumed, it beats at its next time, not straight away for everything it missed
+  const lastRun = ((await f.call("heartbeat.status")) as any).lastRun;
+  const on = (await f.call("heartbeat.set", { on: true })) as any;
+  assert.equal(on.paused, false);
+  assert.ok(Date.parse(on.next) > Date.now(), "the next beat is still to come");
+  assert.equal(island.scheduler.tick(new Date()).length, 0);
+  assert.equal(((await f.call("heartbeat.status")) as any).lastRun, lastRun);
+
+  // the schedules list can pause it too, but not change it
+  assert.equal(((await f.call("schedule.update", { id: "heartbeat", enabled: false })) as any).schedule.enabled, false);
+  assert.equal(await errCode(f.call("schedule.update", { id: "heartbeat", when: "every 5m" })), CODES.badParams);
+  assert.equal(await errCode(f.call("heartbeat.set", { on: "yes" })), CODES.badParams);
+  await f.call("heartbeat.set", { on: true });
+  f.close();
+});

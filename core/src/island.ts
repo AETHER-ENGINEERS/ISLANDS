@@ -129,7 +129,7 @@ export class Island {
         mcp: this.mcp.map((m) => ({ name: m.name, running: m.running, tools: m.tools.length, error: m.lastError || undefined })),
         threads: this.threads.running().length,
         schedules: this.scheduler.all().length,
-        heartbeat: !!this.scheduler.heartbeat(),
+        heartbeat: this.scheduler.heartbeat()?.enabled === true,
         ferries: [...this.sessions].filter((x) => x.hello).map((x) => ({ ferry: x.ferry, as: x.actor })),
       }),
 
@@ -221,7 +221,21 @@ export class Island {
       },
       "heartbeat.status": () => {
         const hb = this.scheduler.list().find((x) => x.id === "heartbeat");
-        return hb ? { enabled: true, every: hb.when, model: hb.model ?? this.config.models.roles?.heartbeat ?? this.config.models.default, lastRun: hb.lastRun, lastStatus: hb.lastStatus, next: hb.next, running: hb.running, chat: hb.chat } : { enabled: false };
+        if (!hb) return { enabled: false, configured: false };
+        // her last answer from the heartbeat's own chat: what the beat came to
+        let result: { text: string; at: string; model?: string } | undefined;
+        try {
+          if (hb.chat) {
+            const m = [...this.chats.open(hb.chat).messages].reverse().find((x: any) => x.role === "assistant" && typeof x.content === "string" && x.content.trim()) as any;
+            if (m) result = { text: m.content.length > 4000 ? m.content.slice(0, 4000) + "…" : m.content, at: m.at, model: m.model };
+          }
+        } catch {}
+        return { enabled: hb.enabled, configured: true, paused: !hb.enabled, every: hb.when, model: hb.model ?? this.config.models.roles?.heartbeat ?? this.config.models.default, lastRun: hb.lastRun, lastStatus: hb.lastStatus, next: hb.next, running: hb.running, chat: hb.chat, result };
+      },
+      "heartbeat.set": (p, s) => {
+        if (typeof p.on !== "boolean") throw badParams("on is true (beat) or false (pause)");
+        this.scheduler.setHeartbeat(p.on, s.actor, this.via(s));
+        return this.methods["heartbeat.status"]({}, s);
       },
       "models.list": () => ({
         default: this.config.models.default, fallback: this.config.models.fallback ?? [], roles: this.config.models.roles ?? {},
