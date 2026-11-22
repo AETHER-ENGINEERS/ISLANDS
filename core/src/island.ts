@@ -14,7 +14,7 @@ import { builtinTools, type Tool } from "./tools.ts";
 import { McpServer, mcpTools } from "./mcp.ts";
 import { runTurn, nowContext } from "./agent.ts";
 import { Providers } from "./providers.ts";
-import { Scheduler } from "./schedules.ts";
+import { Scheduler, previewWhen } from "./schedules.ts";
 
 export const PROTOCOL = "islands/0.1";
 export const VERSION: string = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -211,6 +211,7 @@ export class Island {
       "tools.list": async () => ({ tools: (await this.tools()).map((t) => ({ name: t.name, description: t.description })) }),
       "providers.list": () => ({ providers: this.providers.list(), chain: this.providers.chain(undefined, "chat") }),
       "schedule.list": () => ({ schedules: this.scheduler.list() }),
+      "schedule.when": (p) => previewWhen(str(p, "when"), num(p.count, 3)),
       "schedule.create": (p, s) => ({ schedule: this.scheduler.create(p, s.actor, this.via(s)) }),
       "schedule.update": (p, s) => ({ schedule: this.scheduler.update(str(p, "id"), p, s.actor, this.via(s)) }),
       "schedule.delete": (p, s) => this.scheduler.delete(str(p, "id"), s.actor, this.via(s)),

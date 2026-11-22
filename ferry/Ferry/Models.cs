@@ -99,3 +99,24 @@ public sealed class MarkdownBox : RichTextBox
         Document = doc;
     }
 }
+
+/// <summary>One of her schedules as the Schedules tab lists it.</summary>
+public sealed class ScheduleItem : Notifying
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string When { get; init; } = "";
+    public string? Prompt { get; init; }
+    public string? Command { get; init; }
+    public string? Model { get; init; }
+    public string? Chat { get; init; }
+    public bool Enabled { get; init; }
+    public string? LastRun { get; init; }
+    public string? LastStatus { get; init; }
+    public string? Next { get; init; }
+    public string? Running { get; init; }
+    public bool IsHeartbeat => Id == "heartbeat";
+    public string Icon => IsHeartbeat ? "♥" : Command != null ? "$" : "✎";
+    public string Line { get; init; } = "";
+    public string Sub { get; init; } = "";
+}

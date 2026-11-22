@@ -202,6 +202,81 @@
             </StackPanel>
           </ScrollViewer>
         </TabItem>
+        <TabItem Header="Schedules">
+          <Grid Background="{StaticResource Bg}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="320"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.Resources>
+              <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
+              <Style TargetType="RadioButton"><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Margin" Value="0,0,18,0"/></Style>
+            </Grid.Resources>
+            <!-- her schedules (the heartbeat first, when it's set up) -->
+            <DockPanel Grid.Column="0">
+              <DockPanel DockPanel.Dock="Top" Margin="10,10,10,6">
+                <Button DockPanel.Dock="Right" Content="New" Click="SchNew" Padding="10,3"/>
+                <TextBlock Text="SCHEDULES" Style="{StaticResource Head}" Margin="2,4,0,0"/>
+              </DockPanel>
+              <TextBlock x:Name="SchEmpty" DockPanel.Dock="Top" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{StaticResource Dim}" Margin="12,4,12,0" Text="No schedules yet. New makes one: a prompt she answers at a time, or a shell command."/>
+              <ListBox x:Name="SchList" SelectionChanged="SchPicked" Margin="4,0" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <DockPanel Margin="6,6">
+                      <TextBlock DockPanel.Dock="Left" Text="{Binding Icon}" Foreground="{StaticResource Dim}" Width="18" FontFamily="Segoe UI Symbol"/>
+                      <StackPanel>
+                        <TextBlock Text="{Binding Line}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Sub}" Foreground="{StaticResource Dim}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                    </DockPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </DockPanel>
+            <!-- one schedule, to read or change -->
+            <Border Grid.Column="1" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="SchForm" Margin="20,12,20,20" MaxWidth="760" HorizontalAlignment="Stretch">
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Button x:Name="SchRemoveBtn" Content="Remove" Click="SchRemove" Margin="0,0,8,0" Foreground="{StaticResource Bad}" ToolTip="Take it away (a copy is kept in the island's trash)"/>
+                      <Button x:Name="SchChatBtn" Content="Open its chat" Click="SchOpenChat" Margin="0,0,8,0"/>
+                      <Button x:Name="SchRunBtn" Content="Run now" Click="SchRun" Margin="0,0,8,0" ToolTip="Once now, whether it's on or not"/>
+                      <Button x:Name="SchSaveBtn" Content="Save" Style="{StaticResource Solid}" Click="SchSave"/>
+                    </StackPanel>
+                    <TextBlock x:Name="SchTitle" Text="NEW SCHEDULE" Style="{StaticResource Head}" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                  </DockPanel>
+                  <TextBlock x:Name="SchHbNote" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{StaticResource Dim}" Margin="0,10,0,0">
+                    <Run Text="Her heartbeat is set in config/island.json (heartbeat.every, model and checklist). It can be paused, resumed or run once from the"/>
+                    <Hyperlink Click="SchGoHeartbeat" Foreground="{StaticResource Accent}">Heartbeat tab</Hyperlink><Run Text="."/>
+                  </TextBlock>
+                  <TextBlock Text="NAME" Style="{StaticResource Head}" Margin="0,12,0,4"/>
+                  <TextBox x:Name="SchName"/>
+                  <TextBlock Text="WHEN" Style="{StaticResource Head}" Margin="0,12,0,4"/>
+                  <TextBox x:Name="SchWhen" TextChanged="SchWhenChanged" FontFamily="Cascadia Mono, Consolas"/>
+                  <TextBlock x:Name="SchWhenHint" Foreground="{StaticResource Dim}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" Text="every 30m · every 2h · daily 08:30 · weekdays 09:00 · weekends 10:00 · or 5-field cron"/>
+                  <TextBlock x:Name="SchWhenNext" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                  <TextBlock Text="WHAT" Style="{StaticResource Head}" Margin="0,12,0,4"/>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <RadioButton x:Name="SchIsPrompt" Content="A prompt: a turn of hers, in the schedule's own chat" GroupName="SchKind" IsChecked="True"/>
+                    <RadioButton x:Name="SchIsCommand" Content="A shell command" GroupName="SchKind"/>
+                  </StackPanel>
+                  <TextBox x:Name="SchBody" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110" MaxHeight="320" VerticalScrollBarVisibility="Auto"/>
+                  <TextBlock Text="MODEL" Style="{StaticResource Head}" Margin="0,12,0,4"/>
+                  <ComboBox x:Name="SchModel" HorizontalAlignment="Left" MinWidth="260"/>
+                  <CheckBox x:Name="SchOn" Content="On: it comes round at its times" IsChecked="True" Margin="0,14,0,0"/>
+                  <Grid x:Name="SchFacts" Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Last run" Foreground="{StaticResource Dim}" Margin="0,3"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SchLast" Margin="0,3"/>
+                    <TextBlock Grid.Row="1" Text="How it went" Foreground="{StaticResource Dim}" Margin="0,3"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SchHow" Margin="0,3" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="2" Text="Next" Foreground="{StaticResource Dim}" Margin="0,3"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SchNext" Margin="0,3"/>
+                  </Grid>
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+          </Grid>
+        </TabItem>
         <TabItem Header="Keys">
           <StackPanel Background="{StaticResource Bg}" Margin="20" MaxWidth="560" HorizontalAlignment="Left">
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Dim}" Margin="0,0,0,12">Her keys are sealed to the island's own account. A key goes in here once and never comes back out: not to this window, a chat, the log, or a tool. Tools and settings name it as {{NAME}}.</TextBlock>

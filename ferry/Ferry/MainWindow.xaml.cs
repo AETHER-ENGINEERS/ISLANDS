@@ -37,11 +37,16 @@ public partial class MainWindow : Window
     private string? hbChat;
     private string? hbThread;
     private bool hbOn;
+    private readonly ObservableCollection<ScheduleItem> schedules = new();
+    private string? schId;
+    private string? schChat;
+    private bool schRefreshing;
+    private System.Windows.Threading.DispatcherTimer? whenTimer;
 
     /// <summary>--send: with --snapshot, say this in the chat and wait for her answer before drawing (a check with no person at the screen).</summary>
     public string? SendOnStart { get; init; }
 
-    /// <summary>--tab: open on this tab (chat, vault, heartbeat, keys), e.g. to snapshot a panel.</summary>
+    /// <summary>--tab: open on this tab (chat, vault, heartbeat, schedules, keys), e.g. to snapshot a panel.</summary>
     public string? StartTab { get; init; }
 
     public MainWindow(FerrySettings settings, string? snapshot = null, string? openChat = null)
@@ -55,11 +60,12 @@ public partial class MainWindow : Window
         Threads.ItemsSource = threads;
         VaultTree.ItemsSource = vault;
         KeyList.ItemsSource = keys;
+        SchList.ItemsSource = schedules;
         Editor.TextChanged += (_, _) => SaveBtn.IsEnabled = openPath != null;
         Loaded += async (_, _) => await ConnectLoop();
         // the shrine can change from her other places too (the Atelier), so the Now bar looks again now and then
         var nowTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        nowTimer.Tick += (_, _) => { if (client != null) { _ = RefreshNow(); _ = RefreshHeartbeat(); } };
+        nowTimer.Tick += (_, _) => { if (client != null) { _ = RefreshNow(); _ = RefreshHeartbeat(); _ = RefreshSchedules(); } };
         nowTimer.Start();
         Closing += (_, _) => { closing = true; _ = client?.DisposeAsync(); };
     }
@@ -117,6 +123,13 @@ public partial class MainWindow : Window
         await RefreshKeys();
         await RefreshVaultTree();
         await RefreshHeartbeat();
+        await RefreshScheduleModels();
+        await RefreshSchedules();
+        if (schId == null && SchList.SelectedItem == null)
+        {
+            if (schedules.FirstOrDefault(x => !x.IsHeartbeat) is { } first) SchList.SelectedItem = first;   // opens on her first schedule
+            else SchFormFor(null);
+        }
         if (StartTab != null) { var t = Tabs.Items.OfType<TabItem>().FirstOrDefault(x => string.Equals(x.Header as string, StartTab, StringComparison.OrdinalIgnoreCase)); if (t != null) Tabs.SelectedItem = t; }
         // anything that happened while the window was away comes now, then everything as it happens
         await Call("events.subscribe", new JsonObject { ["fromSeq"] = caughtUpFrom == 0 ? lastSeq : caughtUpFrom, ["kinds"] = new JsonArray("chat.", "thread.", "vault.", "schedule.", "tool.call") });
@@ -152,6 +165,7 @@ public partial class MainWindow : Window
                 else if (kind == "chat.message" && p.TryGetProperty("chat", out var ch) && ch.GetString() == chatId && live == null) _ = OpenChat(chatId!);
                 else if (kind.StartsWith("vault.") && Tabs.SelectedIndex == 1) _ = RefreshVaultTree();
                 else if (kind == "tool.call" && Str(p, "tool")?.EndsWith("mode_set") == true) _ = RefreshNow();
+                if (kind.StartsWith("schedule.")) _ = RefreshSchedules();
                 if (kind.StartsWith("schedule.") && Str(p, "schedule") == "heartbeat") { _ = RefreshHeartbeat(); _ = RefreshStatus(); }
                 else if (kind == "chat.message" && hbChat != null && Str(p, "chat") == hbChat) _ = RefreshHeartbeat();
                 break;
@@ -176,6 +190,7 @@ public partial class MainWindow : Window
                 item.Title = Str(p, "title") ?? ""; item.Status = Str(p, "status") ?? ""; item.Progress = item.Running ? Str(p, "progress") ?? "" : Str(p, "error") ?? "";
                 if (item.Chat == chatId) Busy(item.Running);
                 if (hbChat != null && item.Chat == hbChat) _ = RefreshHeartbeat();
+                if (item.Chat != null && schedules.Any(x => x.Chat == item.Chat)) _ = RefreshSchedules();
                 while (threads.Count > 30) threads.RemoveAt(threads.Count - 1);
                 break;
             case "notice":
@@ -416,6 +431,192 @@ public partial class MainWindow : Window
         Tabs.SelectedIndex = 0;
         var c = chats.FirstOrDefault(x => x.Id == hbChat);
         if (c != null) Chats.SelectedItem = c; else await OpenChat(hbChat);
+    }
+
+    // ---------- the schedules editor ----------
+
+    /// <summary>Her schedules from the island (the heartbeat first, when it's set up), keeping what's picked.</summary>
+    private async Task RefreshSchedules()
+    {
+        JsonElement r;
+        try { r = await Call("schedule.list"); } catch { return; }
+        var keep = (SchList.SelectedItem as ScheduleItem)?.Id ?? schId;
+        schRefreshing = true;
+        try
+        {
+            schedules.Clear();
+            foreach (var s in r.GetProperty("schedules").EnumerateArray())
+            {
+                var enabled = s.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True;
+                var running = Str(s, "running"); var next = Str(s, "next"); var how = Str(s, "lastStatus"); var when = Str(s, "when") ?? "";
+                var sub = (enabled ? when : "off · " + when) + (running != null ? " · running now" : enabled && next != null ? " · next " + When(next) : "") + (how?.StartsWith("failed") == true ? " · last run failed" : "");
+                schedules.Add(new ScheduleItem
+                {
+                    Id = Str(s, "id")!, Name = Str(s, "name") ?? "", When = when, Prompt = Str(s, "prompt"), Command = Str(s, "command"), Model = Str(s, "model"),
+                    Chat = Str(s, "chat"), Enabled = enabled, LastRun = Str(s, "lastRun"), LastStatus = how, Next = next, Running = running,
+                    Line = Str(s, "name") ?? "", Sub = sub,
+                });
+            }
+            SchEmpty.Visibility = schedules.Any(x => !x.IsHeartbeat) ? Visibility.Collapsed : Visibility.Visible;
+            var again = keep == null ? null : schedules.FirstOrDefault(x => x.Id == keep);
+            if (again != null) { SchList.SelectedItem = again; SchFactsFrom(again); }
+            else if (schId != null) SchFormFor(null);   // it was taken away elsewhere
+        }
+        finally { schRefreshing = false; }
+    }
+
+    private async Task RefreshScheduleModels()
+    {
+        try
+        {
+            var m = await Call("models.list");
+            var roles = m.TryGetProperty("roles", out var ro) ? ro : default;
+            var own = Str(roles, "schedules") ?? Str(m, "default") ?? "";
+            var pick = (SchModel.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+            SchModel.Items.Clear();
+            SchModel.Items.Add(new ComboBoxItem { Content = $"the island's model for schedules ({own})", Tag = "" });
+            foreach (var x in m.GetProperty("models").EnumerateArray())
+                if (Str(x, "name") is { } n) SchModel.Items.Add(new ComboBoxItem { Content = n + (x.TryGetProperty("ready", out var rd) && rd.ValueKind == JsonValueKind.False ? "  (not ready)" : ""), Tag = n });
+            SchPickModel(pick);
+        }
+        catch { }
+    }
+
+    private void SchPickModel(string? name)
+    {
+        var want = SchModel.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == (name ?? ""));
+        if (want == null && !string.IsNullOrEmpty(name)) { want = new ComboBoxItem { Content = name + "  (not in this island's models)", Tag = name }; SchModel.Items.Add(want); }
+        SchModel.SelectedItem = want ?? SchModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+    }
+
+    private void SchPicked(object sender, SelectionChangedEventArgs e)
+    {
+        if (schRefreshing) return;
+        if (SchList.SelectedItem is ScheduleItem s) SchFormFor(s);
+    }
+
+    private void SchNew(object sender, RoutedEventArgs e)
+    {
+        SchList.SelectedItem = null;
+        SchFormFor(null);
+        SchName.Focus();
+    }
+
+    /// <summary>The form for one schedule, or a blank one for a new schedule.</summary>
+    private void SchFormFor(ScheduleItem? s)
+    {
+        schId = s?.Id;
+        var hb = s?.IsHeartbeat == true;
+        SchTitle.Text = s == null ? "NEW SCHEDULE" : hb ? "HEARTBEAT" : "SCHEDULE";
+        SchHbNote.Visibility = hb ? Visibility.Visible : Visibility.Collapsed;
+        SchName.Text = s?.Name ?? "";
+        SchWhen.Text = s?.When ?? "daily 08:30";
+        SchIsCommand.IsChecked = s?.Command != null;
+        SchIsPrompt.IsChecked = s?.Command == null;
+        SchBody.Text = s == null ? "" : hb ? "Her checklist, read fresh from HEARTBEAT.md at each beat." : s.Command ?? s.Prompt ?? "";
+        SchPickModel(s?.Model);
+        SchOn.IsChecked = s?.Enabled ?? true;
+        foreach (var c in new Control[] { SchName, SchWhen, SchBody, SchModel, SchIsPrompt, SchIsCommand, SchOn }) c.IsEnabled = !hb;
+        SchSaveBtn.Visibility = SchRemoveBtn.Visibility = SchRunBtn.Visibility = hb ? Visibility.Collapsed : Visibility.Visible;
+        SchSaveBtn.Content = s == null ? "Make it" : "Save";
+        if (s == null) SchRemoveBtn.Visibility = SchRunBtn.Visibility = Visibility.Collapsed;
+        SchFactsFrom(s);
+    }
+
+    private void SchFactsFrom(ScheduleItem? s)
+    {
+        SchFacts.Visibility = s == null ? Visibility.Collapsed : Visibility.Visible;
+        schChat = s?.Chat;
+        SchChatBtn.Visibility = s?.Chat != null ? Visibility.Visible : Visibility.Collapsed;
+        if (s == null) return;
+        SchRunBtn.IsEnabled = s.Running == null;
+        SchLast.Text = s.LastRun is { } lr ? When(lr) + "  (" + Ago(lr) + ")" : "not yet";
+        SchHow.Text = s.Running != null ? "running" : s.LastStatus ?? "—";
+        SchHow.Foreground = (Brush)FindResource(s.LastStatus?.StartsWith("failed") == true ? "Bad" : s.LastStatus?.StartsWith("skipped") == true ? "Warn" : "Ink");
+        SchNext.Text = !s.Enabled ? "off" : s.Next is { } nx ? When(nx) + "  (" + Until(nx) + ")" : "—";
+    }
+
+    private void SchWhenChanged(object sender, TextChangedEventArgs e)
+    {
+        if (whenTimer == null)
+        {
+            whenTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+            whenTimer.Tick += SchCheckWhen;
+        }
+        whenTimer.Stop(); whenTimer.Start();
+    }
+
+    /// <summary>What the time typed means, from the island itself (the same reading its scheduler uses).</summary>
+    private async void SchCheckWhen(object? sender, EventArgs e)
+    {
+        whenTimer?.Stop();
+        var when = SchWhen.Text.Trim();
+        if (when.Length == 0 || client == null) { SchWhenNext.Text = ""; return; }
+        try
+        {
+            var r = await Call("schedule.when", new JsonObject { ["when"] = when, ["count"] = 3 });
+            if (SchWhen.Text.Trim() != when) return;
+            var times = r.GetProperty("next").EnumerateArray().Select(x => DateTime.TryParse(x.GetString(), out var t) ? t.ToLocalTime().ToString("ddd d MMM, HH:mm") : "").Where(x => x.Length > 0);
+            SchWhenNext.Text = "comes round " + string.Join("  ·  ", times) + "   (cron " + Str(r, "cron") + ")";
+            SchWhenNext.Foreground = (Brush)FindResource("Accent");
+        }
+        catch (Exception ex)
+        {
+            if (SchWhen.Text.Trim() != when) return;
+            SchWhenNext.Text = ex.Message;
+            SchWhenNext.Foreground = (Brush)FindResource("Bad");
+        }
+    }
+
+    private async void SchSave(object sender, RoutedEventArgs e)
+    {
+        var name = SchName.Text.Trim(); var body = SchBody.Text;
+        if (name.Length == 0) { SetStatus("A schedule needs a name.", warn: true); SchName.Focus(); return; }
+        if (body.Trim().Length == 0) { SetStatus(SchIsCommand.IsChecked == true ? "Give it a command to run." : "Give it a prompt: what she does when it comes round.", warn: true); SchBody.Focus(); return; }
+        var model = (SchModel.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        var args = new JsonObject { ["name"] = name, ["when"] = SchWhen.Text.Trim(), [SchIsCommand.IsChecked == true ? "command" : "prompt"] = body, ["enabled"] = SchOn.IsChecked == true };
+        try
+        {
+            JsonElement r;
+            if (schId == null) { if (model.Length > 0) args["model"] = model; r = await Call("schedule.create", args); }
+            else { args["id"] = schId; args["model"] = model; r = await Call("schedule.update", args); }
+            schId = Str(r.GetProperty("schedule"), "id");
+            await RefreshSchedules();
+            if (schedules.FirstOrDefault(x => x.Id == schId) is { } s) { SchList.SelectedItem = s; SchFormFor(s); }
+            SetStatus($"\"{name}\" is saved on the island{(SchOn.IsChecked == true ? "" : ", switched off")}.");
+        }
+        catch (Exception ex) { SetStatus("Couldn't save it: " + ex.Message, bad: true); }
+    }
+
+    private async void SchRun(object sender, RoutedEventArgs e)
+    {
+        if (schId == null) return;
+        try { await Call("schedule.run", new JsonObject { ["id"] = schId }); await RefreshSchedules(); SetStatus("Running it once, now."); }
+        catch (IslandError ex) when (ex.Code == -32003) { await RefreshSchedules(); SetStatus("It's still running from last time.", warn: true); }
+        catch (Exception ex) { SetStatus("Couldn't run it: " + ex.Message, bad: true); }
+    }
+
+    private async void SchRemove(object sender, RoutedEventArgs e)
+    {
+        if (schId == null || schedules.FirstOrDefault(x => x.Id == schId) is not { } s) return;
+        if (MessageBox.Show(this, $"Take \"{s.Name}\" away? A copy is kept in the island's trash (trash/schedules.jsonl).", "Remove schedule", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try { await Call("schedule.delete", new JsonObject { ["id"] = schId }); SchFormFor(null); await RefreshSchedules(); SetStatus($"\"{s.Name}\" is taken away; a copy is in the island's trash."); }
+        catch (Exception ex) { SetStatus("Couldn't remove it: " + ex.Message, bad: true); }
+    }
+
+    private async void SchOpenChat(object sender, RoutedEventArgs e)
+    {
+        if (schChat == null) return;
+        Tabs.SelectedIndex = 0;
+        await RefreshChats();
+        var c = chats.FirstOrDefault(x => x.Id == schChat);
+        if (c != null) Chats.SelectedItem = c; else await OpenChat(schChat);
+    }
+
+    private void SchGoHeartbeat(object sender, RoutedEventArgs e)
+    {
+        var t = Tabs.Items.OfType<TabItem>().FirstOrDefault(x => x.Header as string == "Heartbeat");
+        if (t != null) Tabs.SelectedItem = t;
     }
 
     // ---------- the vault ----------
