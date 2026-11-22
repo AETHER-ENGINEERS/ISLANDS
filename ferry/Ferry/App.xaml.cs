@@ -44,7 +44,7 @@ public partial class App : Application
             s.Home = pick.FolderName;
             s.Save();
         }
-        var w = new MainWindow(s, snapshot: Arg("--snapshot"), openChat: Arg("--chat")) { SendOnStart = Arg("--send") };
+        var w = new MainWindow(s, snapshot: Arg("--snapshot"), openChat: Arg("--chat")) { SendOnStart = Arg("--send"), StartTab = Arg("--tab") };
         MainWindow = w;
         w.Show();
     }

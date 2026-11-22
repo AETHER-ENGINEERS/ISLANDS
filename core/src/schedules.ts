@@ -87,7 +87,12 @@ export interface Schedule {
   created: string;
   lastRun?: string;
   lastStatus?: string;
+  /** The heartbeat only: when it was last switched back on, so a pause isn't caught up on all at once. */
+  resumed?: string;
 }
+
+/** When a schedule last came round (or was made, or switched back on): the next run is the first match after this. */
+const since = (s: Schedule) => new Date(Math.max(...[s.lastRun, s.created, s.resumed].map((x) => (x ? Date.parse(x) : 0)).filter((x) => !Number.isNaN(x))));
 
 export const HEARTBEAT = "heartbeat";
 const DEFAULT_HEARTBEAT = "This is your heartbeat. Here is your checklist from {file}:\n\n{checklist}\n\nWork through it now. Write what matters in your journal. Use notify only when something truly needs your person's attention.";
@@ -120,10 +125,25 @@ export class Scheduler {
     if (!hb?.every) return null;
     let st: Partial<Schedule> = {};
     try { st = JSON.parse(fs.readFileSync(this.stateFile, "utf8")); } catch {}
-    return { id: HEARTBEAT, name: "Heartbeat", when: hb.every, model: hb.model, chat: st.chat, enabled: true, created: st.created ?? this.island.startedAt, lastRun: st.lastRun, lastStatus: st.lastStatus };
+    return { id: HEARTBEAT, name: "Heartbeat", when: hb.every, model: hb.model, chat: st.chat, enabled: st.enabled !== false, created: st.created ?? this.island.startedAt, lastRun: st.lastRun, lastStatus: st.lastStatus, resumed: st.resumed };
   }
   private saveHeartbeat(s: Schedule) {
-    fs.writeFileSync(this.stateFile, JSON.stringify({ chat: s.chat, created: s.created, lastRun: s.lastRun, lastStatus: s.lastStatus }, null, 2));
+    fs.mkdirSync(path.dirname(this.stateFile), { recursive: true });
+    fs.writeFileSync(this.stateFile, JSON.stringify({ chat: s.chat, created: s.created, lastRun: s.lastRun, lastStatus: s.lastStatus, enabled: s.enabled, resumed: s.resumed }, null, 2));
+  }
+
+  /** Pause or resume the heartbeat from a window. How often it beats stays in config/island.json; this only says
+   *  whether it beats. Switched back on, it beats next at its next time, not straight away for the beats it missed. */
+  setHeartbeat(on: boolean, actor: string, via: string): Schedule {
+    const hb = this.heartbeat();
+    if (!hb) throw badParams("the heartbeat isn't set up: give it heartbeat.every in config/island.json first");
+    if (hb.enabled !== on) {
+      hb.enabled = on;
+      if (on) hb.resumed = new Date().toISOString();
+      this.saveHeartbeat(hb);
+      this.island.log.append({ actor, via, kind: "schedule.update", schedule: HEARTBEAT, enabled: on });
+    }
+    return hb;
   }
 
   all(): Schedule[] {
@@ -134,7 +154,7 @@ export class Scheduler {
   list() {
     return this.all().map((s) => {
       let next: string | undefined;
-      try { if (s.enabled) next = nextAfter(parseWhen(s.when).cron, new Date(Date.parse(s.lastRun ?? s.created))).toISOString(); } catch {}
+      try { if (s.enabled) next = nextAfter(parseWhen(s.when).cron, since(s)).toISOString(); } catch {}
       return { ...s, next, running: this.runningIds.get(s.id) };
     });
   }
@@ -159,7 +179,11 @@ export class Scheduler {
   }
 
   update(id: string, p: Record<string, unknown>, actor: string, via: string): Schedule {
-    if (id === HEARTBEAT) throw badParams("the heartbeat is set in config/island.json");
+    if (id === HEARTBEAT) {
+      // a window may pause or resume it; how often it beats is set in config/island.json
+      if (typeof p.enabled === "boolean" && Object.keys(p).every((k) => k === "id" || k === "enabled")) return this.setHeartbeat(p.enabled, actor, via);
+      throw badParams("the heartbeat can be paused or resumed here (enabled); the rest is set in config/island.json");
+    }
     const list = this.read();
     const s = list.find((x) => x.id === id);
     if (!s) throw notFound(`schedule ${id}`);
@@ -191,7 +215,7 @@ export class Scheduler {
     for (const s of this.all()) {
       if (!s.enabled) continue;
       let due: Date;
-      try { due = nextAfter(parseWhen(s.when).cron, new Date(Date.parse(s.lastRun ?? s.created))); } catch { continue; }
+      try { due = nextAfter(parseWhen(s.when).cron, since(s)); } catch { continue; }
       if (due.getTime() <= now.getTime()) { const t = this.run(s.id, "scheduler", "schedule", now); if (t) started.push(t); }
     }
     return started;

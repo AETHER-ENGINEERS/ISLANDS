@@ -34,9 +34,15 @@ public partial class MainWindow : Window
     private string? liveThread;
     private string? openPath;
     private long openMtime;
+    private string? hbChat;
+    private string? hbThread;
+    private bool hbOn;
 
     /// <summary>--send: with --snapshot, say this in the chat and wait for her answer before drawing (a check with no person at the screen).</summary>
     public string? SendOnStart { get; init; }
+
+    /// <summary>--tab: open on this tab (chat, vault, heartbeat, keys), e.g. to snapshot a panel.</summary>
+    public string? StartTab { get; init; }
 
     public MainWindow(FerrySettings settings, string? snapshot = null, string? openChat = null)
     {
@@ -53,7 +59,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await ConnectLoop();
         // the shrine can change from her other places too (the Atelier), so the Now bar looks again now and then
         var nowTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        nowTimer.Tick += (_, _) => { if (client != null) _ = RefreshNow(); };
+        nowTimer.Tick += (_, _) => { if (client != null) { _ = RefreshNow(); _ = RefreshHeartbeat(); } };
         nowTimer.Start();
         Closing += (_, _) => { closing = true; _ = client?.DisposeAsync(); };
     }
@@ -110,6 +116,8 @@ public partial class MainWindow : Window
         await RefreshThreads();
         await RefreshKeys();
         await RefreshVaultTree();
+        await RefreshHeartbeat();
+        if (StartTab != null) { var t = Tabs.Items.OfType<TabItem>().FirstOrDefault(x => string.Equals(x.Header as string, StartTab, StringComparison.OrdinalIgnoreCase)); if (t != null) Tabs.SelectedItem = t; }
         // anything that happened while the window was away comes now, then everything as it happens
         await Call("events.subscribe", new JsonObject { ["fromSeq"] = caughtUpFrom == 0 ? lastSeq : caughtUpFrom, ["kinds"] = new JsonArray("chat.", "thread.", "vault.", "schedule.", "tool.call") });
         if (wantChat != null) { var c = chats.FirstOrDefault(x => x.Id == wantChat); wantChat = null; if (c != null) Chats.SelectedItem = c; }
@@ -144,6 +152,8 @@ public partial class MainWindow : Window
                 else if (kind == "chat.message" && p.TryGetProperty("chat", out var ch) && ch.GetString() == chatId && live == null) _ = OpenChat(chatId!);
                 else if (kind.StartsWith("vault.") && Tabs.SelectedIndex == 1) _ = RefreshVaultTree();
                 else if (kind == "tool.call" && Str(p, "tool")?.EndsWith("mode_set") == true) _ = RefreshNow();
+                if (kind.StartsWith("schedule.") && Str(p, "schedule") == "heartbeat") { _ = RefreshHeartbeat(); _ = RefreshStatus(); }
+                else if (kind == "chat.message" && hbChat != null && Str(p, "chat") == hbChat) _ = RefreshHeartbeat();
                 break;
             case "chat.delta":
                 if (Str(p, "chat") != chatId) return;
@@ -165,6 +175,7 @@ public partial class MainWindow : Window
                 if (item == null) { item = new ThreadItem { Id = id, Chat = Str(p, "chat") }; threads.Insert(0, item); }
                 item.Title = Str(p, "title") ?? ""; item.Status = Str(p, "status") ?? ""; item.Progress = item.Running ? Str(p, "progress") ?? "" : Str(p, "error") ?? "";
                 if (item.Chat == chatId) Busy(item.Running);
+                if (hbChat != null && item.Chat == hbChat) _ = RefreshHeartbeat();
                 while (threads.Count > 30) threads.RemoveAt(threads.Count - 1);
                 break;
             case "notice":
@@ -323,6 +334,89 @@ public partial class MainWindow : Window
     }
 
     private void DismissNotice(object sender, RoutedEventArgs e) => NoticeBar.Visibility = Visibility.Collapsed;
+
+    // ---------- the heartbeat panel ----------
+
+    /// <summary>Her heartbeat as the island sees it: how often, the last beat and what it came to, the next one.</summary>
+    private async Task RefreshHeartbeat()
+    {
+        JsonElement h;
+        try { h = await Call("heartbeat.status"); } catch { return; }
+        var configured = h.TryGetProperty("configured", out var cf) ? cf.ValueKind == JsonValueKind.True : h.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True;
+        hbOn = h.TryGetProperty("enabled", out var on) && on.ValueKind == JsonValueKind.True;
+        hbChat = Str(h, "chat");
+        hbThread = Str(h, "running");
+        HbFacts.Visibility = configured ? Visibility.Visible : Visibility.Collapsed;
+        HbToggleBtn.Visibility = HbNowBtn.Visibility = configured ? Visibility.Visible : Visibility.Collapsed;
+        HbStopBtn.Visibility = hbThread != null ? Visibility.Visible : Visibility.Collapsed;
+        if (!configured)
+        {
+            HbState.Text = "Her heartbeat isn't set up on this island yet. It starts once config/island.json has heartbeat.every (e.g. \"every 30m\").";
+            HbState.Foreground = (Brush)FindResource("Dim");
+            HbResultHead.Visibility = HbResultBox.Visibility = Visibility.Collapsed;
+            return;
+        }
+        HbState.Text = hbThread != null ? "Beating now…" : hbOn ? "Beating" : "Paused";
+        HbState.Foreground = (Brush)FindResource(hbThread != null ? "Accent" : hbOn ? "Ink" : "Warn");
+        HbToggleBtn.Content = hbOn ? "Pause" : "Resume";
+        HbToggleBtn.ToolTip = hbOn ? "Stop the beats coming round (its config stays as it is)" : "Let the beats come round again, from the next one";
+        HbNowBtn.IsEnabled = hbThread == null;
+        HbEvery.Text = Str(h, "every") ?? "";
+        HbModel.Text = Str(h, "model") ?? "";
+        HbLast.Text = Str(h, "lastRun") is { } lr ? When(lr) + "  (" + Ago(lr) + ")" : "not yet";
+        var how = Str(h, "lastStatus");
+        HbHow.Text = hbThread != null ? "running" : how ?? "—";
+        HbHow.Foreground = (Brush)FindResource(how?.StartsWith("failed") == true ? "Bad" : how?.StartsWith("skipped") == true ? "Warn" : "Ink");
+        HbNext.Text = !hbOn ? "paused" : Str(h, "next") is { } nx ? When(nx) + "  (" + Until(nx) + ")" : "—";
+        if (h.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.Object && Str(r, "text") is { Length: > 0 } text)
+        {
+            if (HbResult.Markdown != text) HbResult.Markdown = text;
+            HbResultMeta.Text = "   " + When(Str(r, "at")) + (Str(r, "model") is { Length: > 0 } m ? " · " + m : "");
+            HbResultHead.Visibility = HbResultBox.Visibility = Visibility.Visible;
+        }
+        else HbResultHead.Visibility = HbResultBox.Visibility = Visibility.Collapsed;
+    }
+
+    private static string Ago(string iso)
+    {
+        if (!DateTime.TryParse(iso, out var t)) return "";
+        var d = DateTime.Now - t.ToLocalTime();
+        return d.TotalMinutes < 1 ? "just now" : d.TotalHours < 1 ? $"{(int)d.TotalMinutes} min ago" : d.TotalDays < 1 ? $"{(int)d.TotalHours} h {d.Minutes} min ago" : $"{(int)d.TotalDays} days ago";
+    }
+
+    private static string Until(string iso)
+    {
+        if (!DateTime.TryParse(iso, out var t)) return "";
+        var d = t.ToLocalTime() - DateTime.Now;
+        return d.TotalMinutes < 1 ? "in under a minute" : d.TotalHours < 1 ? $"in {(int)Math.Ceiling(d.TotalMinutes)} min" : $"in {(int)d.TotalHours} h {d.Minutes} min";
+    }
+
+    private async void HbToggle(object sender, RoutedEventArgs e)
+    {
+        try { await Call("heartbeat.set", new JsonObject { ["on"] = !hbOn }); await RefreshHeartbeat(); await RefreshStatus(); SetStatus(hbOn ? "Her heartbeat is on again; it beats next at its next time." : "Her heartbeat is paused. Its settings are kept."); }
+        catch (Exception ex) { SetStatus("Couldn't change the heartbeat: " + ex.Message, bad: true); }
+    }
+
+    private async void HbBeatNow(object sender, RoutedEventArgs e)
+    {
+        try { await Call("schedule.run", new JsonObject { ["id"] = "heartbeat" }); await RefreshHeartbeat(); SetStatus("One heartbeat, now."); }
+        catch (IslandError ex) when (ex.Code == -32003) { await RefreshHeartbeat(); SetStatus("It's still beating from last time, or had nothing to do (see How it went).", warn: true); }
+        catch (Exception ex) { SetStatus("Couldn't start a beat: " + ex.Message, bad: true); }
+    }
+
+    private async void HbStop(object sender, RoutedEventArgs e)
+    {
+        if (hbThread == null) return;
+        try { await Call("thread.cancel", new JsonObject { ["id"] = hbThread }); } catch (Exception ex) { SetStatus(ex.Message, bad: true); }
+    }
+
+    private async void HbOpenChat(object sender, RoutedEventArgs e)
+    {
+        if (hbChat == null) return;
+        Tabs.SelectedIndex = 0;
+        var c = chats.FirstOrDefault(x => x.Id == hbChat);
+        if (c != null) Chats.SelectedItem = c; else await OpenChat(hbChat);
+    }
 
     // ---------- the vault ----------
 
