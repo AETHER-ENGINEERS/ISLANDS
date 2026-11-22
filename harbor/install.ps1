@@ -20,14 +20,14 @@
   -DryRun shows every step without doing any of them.
 
 .EXAMPLE
-  .\harbor\install.ps1 -IslandHome 'D:\Islands\Pandora' -Name "Pandora's island"
+  .\harbor\install.ps1 -IslandHome 'D:\Islands\Shiosai' -Name 'Shiosai' -ServiceName Fae
 #>
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [string] $IslandHome,
   [string] $Name = 'island',
   [string] $ServiceName = 'PandoraDee',
-  [string] $Pipe = 'pandora-island',
+  [string] $Pipe,
   [string] $Person = "$env:USERDOMAIN\$env:USERNAME",
   [string] $Node = (Get-Command node -ErrorAction SilentlyContinue).Source,
   [string] $Repo,
@@ -35,6 +35,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if (-not $Repo) { $Repo = Split-Path -Parent $PSScriptRoot }   # the checkout this script is in
+if (-not $Pipe) { $Pipe = "island-$($ServiceName.ToLowerInvariant())" }   # each island its own door, so islands side by side never collide
 
 function Step([string] $what, [scriptblock] $do) {
   if ($DryRun) { Write-Host "would: $what" -ForegroundColor Cyan; return }
