@@ -136,8 +136,9 @@ Schedules run as island threads, with no window open. `when` is `every 30m`, `ev
 |---|---|---|
 | `schedule.list` | none | `{schedules: [{id, name, when, prompt?, command?, model?, chat?, enabled, lastRun?, lastStatus?, next?, running?}]}`. The heartbeat is listed first when it's set up (`enabled: false` while it's paused) |
 | `schedule.create` | `{name, when, prompt\|command, model?, enabled?}` | `{schedule}` |
-| `schedule.update` | `{id, name?, when?, prompt?, command?, model?, enabled?}` | `{schedule}`. For the heartbeat, only `enabled` (pause or resume) |
-| `schedule.delete` | `{id}` | `{id}` |
+| `schedule.when` | `{when, count?}` | `{when, cron, next: [iso…]}`: what a time means and when it next comes round (3 by default, up to 10), without saving anything. -32602 with the reason if it isn't a time the island reads |
+| `schedule.update` | `{id, name?, when?, prompt?, command?, model?, enabled?}` | `{schedule}`. `model: ""` (or `null`) goes back to the island's model for schedules. For the heartbeat, only `enabled` (pause or resume) |
+| `schedule.delete` | `{id}` | `{id}`. A copy goes to `trash/schedules.jsonl`, so it can be put back by hand |
 | `schedule.run` | `{id}` | `{thread}`: runs it now. -32003 if it's still running, or had nothing to do |
 | `heartbeat.status` | none | `{enabled, configured, paused?, every?, model?, lastRun?, lastStatus?, next?, running?, chat?, result?}`. `result` is `{text, at, model?}`: her last answer in the heartbeat's chat |
 | `heartbeat.set` | `{on}` | the same as `heartbeat.status`. Pauses (`false`) or resumes (`true`) it without changing `config/island.json`; resumed, it beats next at its next time, not at once for the beats it missed |

@@ -265,3 +265,30 @@ test("the heartbeat panel: what the last beat came to, and pausing it from a win
   await f.call("heartbeat.set", { on: true });
   f.close();
 });
+
+test("the schedules editor: a time checked as it's typed, a model put back to the island's, and a removed schedule kept in the trash", async () => {
+  const f = await ferry();
+  const w = (await f.call("schedule.when", { when: "weekdays 09:00" })) as any;
+  assert.equal(w.cron, "0 9 * * 1-5");
+  assert.equal(w.next.length, 3);
+  for (const t of w.next) { const d = new Date(t); assert.equal(d.getHours(), 9); assert.ok(d.getDay() >= 1 && d.getDay() <= 5); }
+  assert.equal(((await f.call("schedule.when", { when: "every 15m", count: 5 })) as any).next.length, 5);
+  assert.equal(await errCode(f.call("schedule.when", { when: "sometimes" })), CODES.badParams);
+  const before = (((await f.call("schedule.list")) as any).schedules as any[]).length;
+
+  const s = ((await f.call("schedule.create", { name: "Tea", when: "daily 16:00", prompt: "Make tea.", model: "kitti" })) as any).schedule;
+  assert.equal(s.model, "kitti");
+  const back = ((await f.call("schedule.update", { id: s.id, model: "" })) as any).schedule;
+  assert.equal(back.model, undefined, "an empty model means the island's own for schedules");
+  assert.equal(await errCode(f.call("schedule.update", { id: s.id, model: "nobody" })), CODES.badParams);
+  const asCmd = ((await f.call("schedule.update", { id: s.id, command: "echo tea" })) as any).schedule;
+  assert.equal(asCmd.prompt, undefined);
+  assert.equal(asCmd.command, "echo tea");
+
+  await f.call("schedule.delete", { id: s.id });
+  assert.equal((((await f.call("schedule.list")) as any).schedules as any[]).length, before);
+  const kept = fs.readFileSync(path.join(home, "trash", "schedules.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(kept.at(-1).id, s.id);
+  assert.equal(kept.at(-1).name, "Tea");
+  f.close();
+});

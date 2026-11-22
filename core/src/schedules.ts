@@ -73,6 +73,19 @@ export function nextAfter(c: Cron, after: Date): Date {
   throw new Error("that schedule never comes round");
 }
 
+/** What a `when` means, for a window to show while it's being typed: the cron it reads as and its next few times. */
+export function previewWhen(when: string, count = 3, from = new Date()): { when: string; cron: string; next: string[] } {
+  let parsed: ReturnType<typeof parseWhen>;
+  try { parsed = parseWhen(when); } catch (e) { throw badParams((e as Error).message); }
+  const next: string[] = [];
+  let t = from;
+  for (let i = 0; i < Math.max(1, Math.min(count, 10)); i++) {
+    try { t = nextAfter(parsed.cron, t); } catch { break; }
+    next.push(t.toISOString());
+  }
+  return { when, cron: parsed.text, next };
+}
+
 // ---------- schedules ----------
 
 export interface Schedule {
@@ -192,7 +205,8 @@ export class Scheduler {
     if (typeof p.when === "string") next.when = p.when;
     if (typeof p.prompt === "string") { next.prompt = p.prompt; delete next.command; }
     if (typeof p.command === "string") { next.command = p.command; delete next.prompt; }
-    if (typeof p.model === "string") next.model = p.model;
+    if (typeof p.model === "string" && p.model) next.model = p.model;
+    else if (p.model === null || p.model === "") delete next.model;   // back to the island's model for schedules
     if (typeof p.enabled === "boolean") next.enabled = p.enabled;
     this.check(next);
     this.write(list.map((x) => (x.id === id ? next : x)));
@@ -203,7 +217,10 @@ export class Scheduler {
   delete(id: string, actor: string, via: string) {
     if (id === HEARTBEAT) throw badParams("the heartbeat is switched off in config/island.json");
     const list = this.read();
-    if (!list.some((x) => x.id === id)) throw notFound(`schedule ${id}`);
+    const gone = list.find((x) => x.id === id);
+    if (!gone) throw notFound(`schedule ${id}`);
+    // kept in the island's trash, so a schedule taken away by mistake can be put back by hand
+    try { fs.mkdirSync(this.island.dirs.trash, { recursive: true }); fs.appendFileSync(path.join(this.island.dirs.trash, "schedules.jsonl"), JSON.stringify({ ...gone, removed: new Date().toISOString(), by: actor }) + "\n"); } catch {}
     this.write(list.filter((x) => x.id !== id));
     this.island.log.append({ actor, via, kind: "schedule.delete", schedule: id });
     return { id };

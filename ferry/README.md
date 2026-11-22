@@ -20,6 +20,13 @@ scaling, 115% included. There's no web view anywhere.
   went, and when the next one comes. Below that is what the last beat came to (her answer, with a link to its chat).
   - Pause / Resume switches it without touching `config/island.json`. Resumed, it beats at its next time.
   - Beat now runs one beat straight away. Stop this beat ends one that's running.
+- **Schedules:** her schedules in a list (the heartbeat first, when it's set up), each with when it comes round
+  next, and a form to make or change one.
+  - Name, when (checked by the island as you type, with the next three times it comes round), a prompt or a shell
+    command, the model (or the island's own for schedules), and on/off.
+  - Run now runs it once. Open its chat shows what it wrote. Remove takes it away, with a copy kept in the island's
+    `trash/schedules.jsonl`.
+  - The heartbeat shows here too, read-only: it's set in `config/island.json` and paused from the Heartbeat tab.
 - **Threads:** what's running on the island (turns, schedules, the heartbeat), with Stop on each.
 - **Notices:** when she uses `notify`, a bar across the top. Urgent ones bring the window forward with a sound.
 - **Vault:** her files as a tree, opened in an editor (AvalonEdit). Save writes back with `ifMtime`, so a file that
@@ -56,5 +63,5 @@ dotnet publish ferry/Ferry -c Release -r win-x64 --self-contained -p:PublishSing
   - that a wrong token gets nothing;
   - vault and chat round trips;
   - catching up from a seq, then live events.
-- `ferry.exe --home <home> [--chat <id>] [--tab heartbeat] [--send "<text>"] --snapshot out.png` draws the window to a PNG and closes: a
+- `ferry.exe --home <home> [--chat <id>] [--tab heartbeat|schedules] [--send "<text>"] --snapshot out.png` draws the window to a PNG and closes: a
   way to check how it looks with nobody at the screen. With `--send`, it says that first and waits for her answer.
