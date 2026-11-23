@@ -26,6 +26,12 @@ throughout the move, and later one ferry among others.
 - **Tide charts:** each jetty keeps a small logbook of facts that points into the island's log.
 - **Stranded messages** stay stranded until retried.
 
+## Contracts first (2026-11-23)
+
+Before any real identity moves onto an island, the contracts in [docs/contracts/](contracts/README.md) are agreed,
+and a contract-test harness proves them against a disposable synthetic island. The steps below built the parts; the
+contracts decide how they keep an identity whole.
+
 ## Steps
 
 1. **The core on its feet.** The vault on disk, the event log, chats as files, and the ferry protocol on a private
