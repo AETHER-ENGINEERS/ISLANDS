@@ -27,7 +27,7 @@ It's self-contained, so the machine doesn't need .NET installed to run it. It ta
 ## Install (once, as administrator)
 
 ```powershell
-.\harbor\install.ps1 -IslandHome '<the island's home>' -Name "<the island's name>" [-ServiceName PandoraDee] [-Pipe pandora-island] [-Person DOMAIN\name] [-DryRun]
+.\harbor\install.ps1 -IslandHome '<the island's home>' -Name "<the island's name>" [-ServiceName <name>] [-Pipe <door name>] [-Person DOMAIN\name] [-DryRun]
 ```
 
 It does five things:
@@ -38,6 +38,10 @@ It does five things:
 4. Gives the island's account and `-Person` (by default, whoever runs the script) full control of the home, and keeps
    SYSTEM. Nobody else gets access.
 5. Starts the service and waits for the core.
+
+Each island gets its own home, service and door. The door defaults to `island-<service name>`, so islands side by
+side never collide, and the window finds each one's door in `<home>\state\harbor.json`. A layout for several islands:
+`<drive>\Islands\<island name>`, one service per island.
 
 `-DryRun` lists the steps and changes nothing. Running it again updates `<home>\app` and leaves everything else in the
 home alone.

@@ -30,6 +30,19 @@ public sealed record IslandAddress(string Home, string Pipe = "pandora-island")
         const string prefix = @"\\.\pipe\";
         return (token, ep != null && ep.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? ep[prefix.Length..] : null);
     }
+
+    /// <summary>The harbor's door for this island, from &lt;home&gt;/state/harbor.json (each island has its own), or null.</summary>
+    public string? HarborPipe()
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(Home, "state", "harbor.json")));
+            var p = doc.RootElement.GetProperty("pipe").GetString() ?? "";
+            const string prefix = @"\\.\pipe\";
+            return p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? p[prefix.Length..] : null;
+        }
+        catch { return null; }
+    }
 }
 
 public sealed class IslandClient : IAsyncDisposable
@@ -73,9 +86,16 @@ public sealed class IslandClient : IAsyncDisposable
     public static async Task<(IslandClient Client, JsonElement Hello)> ConnectAsync(IslandAddress where, string ferryName, string ferryVersion, string asWho, CancellationToken ct = default)
     {
         var (token, corePipe) = where.ReadCore();
-        IslandClient c;
-        try { c = await ConnectPipeAsync(where.Pipe, 1500, ct); }
-        catch (Exception) when (corePipe != null) { c = await ConnectPipeAsync(corePipe, 3000, ct); }
+        // the door this island's harbor says it opened, then the one named in settings, then the core's own
+        var doors = new[] { where.HarborPipe(), where.Pipe, corePipe }.Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        IslandClient? c = null;
+        Exception? last = null;
+        foreach (var d in doors)
+        {
+            try { c = await ConnectPipeAsync(d!, d == corePipe ? 3000 : 1500, ct); break; }
+            catch (Exception e) when (e is not OperationCanceledException) { last = e; }
+        }
+        if (c is null) throw last ?? new IOException("no door to try");
         try
         {
             var hello = await c.CallAsync("island.hello", new JsonObject

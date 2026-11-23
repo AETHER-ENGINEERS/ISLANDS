@@ -54,6 +54,24 @@ public sealed class ClientTests(CoreFixture island) : IClassFixture<CoreFixture>
     }
 
     [Fact]
+    public async Task It_finds_the_door_the_harbor_wrote_down()
+    {
+        // each island's harbor writes its own door into state/harbor.json; the window goes there first
+        var (_, corePipe) = island.Address.ReadCore();
+        var hj = Path.Combine(island.Home, "state", "harbor.json");
+        File.WriteAllText(hj, JsonSerializer.Serialize(new { pipe = @"\\.\pipe\" + corePipe }));
+        try
+        {
+            var where = new IslandAddress(island.Home, Pipe: "a-door-that-isnt-there");
+            Assert.Equal(corePipe, where.HarborPipe());
+            var (c, _) = await IslandClient.ConnectAsync(where, "wpf", "test", "Mrrowr-murrr");
+            await using var _c = c;
+            Assert.Equal(corePipe, c.Door);
+        }
+        finally { File.Delete(hj); }
+    }
+
+    [Fact]
     public async Task A_wrong_token_gets_nothing()
     {
         var (_, corePipe) = island.Address.ReadCore();
