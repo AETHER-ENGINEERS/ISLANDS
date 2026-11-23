@@ -77,7 +77,7 @@ old application copy, a credential file. Before it becomes her root, the collisi
 | id | Test | Status |
 |---|---|---|
 | F-01 | Vault paths map onto real files under one root; no path escapes it; links leading out aren't followed | **passing** (`core/test/vault.test.ts`) |
-| F-02 | A file written by the vault tool is read back identically by the real shell (relative path), and the other way round | **passing** (`core/test/agent.test.ts`: the shell starts in the vault and sees what `vault_write` wrote) |
+| F-02 | A file written by the vault tool is read back identically by the real shell (relative path), and the other way round | implemented, untested (`core/test/agent.test.ts` proves only that the shell starts in the root) |
 | F-03 | A subtree that existed before (a library folder) is reachable at its own path under `/`, by vault tools, the shell and its MCP server alike, with no doubled root anywhere | pending |
 | F-04 | An attached client's shell tool runs on the island (it can see a file only the host has); standalone, it says BusyBox in every result | pending |
 | F-05 | Within one job, all tools run in one context (island or standalone client), never mixed | pending |
