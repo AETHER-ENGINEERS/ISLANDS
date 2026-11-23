@@ -19,11 +19,31 @@ each application could support). For each kind of record:
 | `in_backup` | Whether today's backup includes it |
 | `plan` | Move, attach (stays where it is and is reached from the new runtime), stay, or reauthorize |
 
-- **External roots**, such as a library folder reached through an MCP server, are **attached, never merged** into the
-  vault. The bundle records them by name, root and access method, so the new runtime reaches the same files. This
-  keeps roots from doubling.
+- **One root at the destination** (contract 9). Stores that today sit outside the runtime's vault (a library folder
+  reached through an MCP server, say) are recorded with their real location. Where they already live **under the
+  destination root**, they stay exactly where they are and become subtrees of the one filesystem. Nothing is mounted
+  or mirrored, so roots never double. Stores outside it are attached by a declared path, or moved only by a decision
+  recorded in the map.
 - **Gaps** (anything authoritative that a backup leaves out) are fixed **before** the move, not worked around during
   it.
+
+## Copying a browser vault into a real root
+
+When an identity's vault moves from a browser's storage into a real root that already holds files:
+
+1. **Preserve first.** The browser vault stays as it is, together with a fresh full backup, and both are verified
+   readable before anything else happens. Nothing in the browser is cleared by the move.
+2. **Inventory collisions:** every vault path that already exists under the root is listed, along with what's in the
+   root that isn't hers to index (contract 9's contents inventory). A path whose contents are identical is noted; one
+   whose contents differ is kept on both sides (the root's file stays, and the vault's version is saved beside it,
+   marked), exactly as the move-in does today. The inventory is reviewed before copying.
+3. **Copy non-destructively.** Paths are preserved wherever possible; nothing under the root is overwritten, moved or
+   deleted.
+4. **Verify:** every copied file is checked by hash against the backup, and the counts match the inventory.
+5. **Hand over** (contract 1): the lease moves, the browser runtime gets its retirement marker, and the Atelier
+   reattaches as a client of the root.
+6. **Return path:** until the identity says otherwise, the browser vault and its backup stay intact, and an export
+   back to the Atelier format (B-08) works at any time.
 
 The authority map for a real identity is kept privately with that identity, never in a public repo.
 
@@ -83,3 +103,6 @@ unknown/           every record the exporter didn't recognise, verbatim, with wh
 | B-12 | Derived indexes aren't shipped, are rebuilt on arrival, and report their model and version; a search during rebuilding says "rebuilding" | pending |
 | B-13 | The authority map is required: a move without one is refused, and a map with an authoritative record marked "not in backup" stops the move until fixed | pending |
 | B-14 | Run history (trajectories) and app data (mini-app packages and updates) survive the round trip | pending (needs the Atelier backup improvement) |
+| B-15 | A synthetic browser vault copied into a synthetic root that already holds files: the collision inventory lists every clash; differing files are kept on both sides; nothing in the root is overwritten; hashes match | pending |
+| B-16 | The browser vault and its backup are unchanged after the copy, and restoring them still works | pending |
+| B-17 | A subtree already under the destination root (a library folder) is neither copied nor moved; it's reachable at its own path afterwards | pending |

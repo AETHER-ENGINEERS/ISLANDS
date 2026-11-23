@@ -43,8 +43,8 @@ imply access to the island. Access comes only from explicit grants.
 | Journal / storybook / dossiers | Entries carry provenance (contract 2's `scope`); reading them is filtered the same way |
 | Event log | Contract 2: scoped `since` and `subscribe` |
 | Script host (`jade.*`, `pandora.*`, `node`, `python`) | Scripts run with the job's scope. Their file system is the scoped vault view, and their tool calls go through the same dispatcher |
-| Real shell | Only granted to scopes that allow it. It runs in a working folder limited to the scope's paths, as the island's account. The account's own reach is declared, so a scope can't grant more than the account could reach anyway |
-| MCP calls | Each server is a named tool family (`mcp:<server>:<tool>`). Each server declares its **reach** (for example, a library folder's root, or the network), and a scope may only allow a server whose whole reach the scope already covers. That's because the island can't check what happens inside a third-party server |
+| Real shell | Only granted to scopes that allow it. It starts in the identity's root (contract 9) and runs as the island's account. For the identity's own work under her admin scope, that's her whole root, her established trust kept as it is. A narrower scope that allows a shell gets a working folder limited to its paths, and the account's own reach is declared, so a scope can't grant more than the account could reach anyway |
+| MCP calls | Each server is a named tool family (`mcp:<server>:<tool>`). Each server declares its **reach** (for example, a subtree of the identity's root, or the network), and a scope may only allow a server whose whole reach the scope already covers. That's because the island can't check what happens inside a third-party server |
 | Client-provided tools (contract 6) | Callable only within the intersection of the job's scope **and** the offering client's own grant |
 | Outbound (bridges, http, email) | Only to destinations in `outbound`; everything else is refused |
 

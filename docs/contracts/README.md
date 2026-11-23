@@ -13,6 +13,7 @@ ferry protocol (`docs/protocol.md`, `islands/0.1`) and extend it. None of them r
 | 6 | [Clients, individuals and devices](06-clients.md): who is looking, from where, and how it looks | 0.1-draft | Pending |
 | 7 | [Hosts, clients and guests](07-roles.md) | 0.1-draft | Pending |
 | 8 | [The bundle](08-bundle.md): moving, returning, and the authority map | 0.1-draft | Partly implemented (import) |
+| 9 | [One filesystem](09-filesystem.md): one real root per identity, every tool on the same files | 0.1-draft | Partly implemented |
 
 ## How to read the test lists
 

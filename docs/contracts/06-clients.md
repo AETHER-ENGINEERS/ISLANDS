@@ -40,6 +40,16 @@ client's defaults. Identity settings are never overridden by presentation layers
 - **The Atelier's localStorage today mixes identity and presentation.** Contract 8's move-in sorts each known key
   into a layer, and carries unknown keys rather than dropping them.
 
+## Clients reach the island from anywhere they're allowed
+
+- A client may run on the island's host or on any authorized device on the LAN or over Tailscale. It talks to the
+  island through the gateway (the roadmap's step 4b): the same protocol, over an encrypted connection, with a
+  per-individual credential (above), and from a browser page with the island answering only paired origins (as
+  SEASIDE's pairing does).
+- **A client keeps no authoritative copy** of the island's files or records (contract 9). The Atelier as a client shows
+  and edits the island's files through its calls, and runs its shell and script tools on the island. Its own browser
+  storage holds only presentation (contract 6's device and individual-on-device layers) and caches it can rebuild.
+
 ## Client-provided tools
 
 A client that can do what the host can't (a browser pane, a GPU for LiteRT/ONNX, a camera, a phone's sensors) may
@@ -62,3 +72,5 @@ A client that can do what the host can't (a browser pane, a GPU for LiteRT/ONNX,
 | D-06 | A client-offered tool works while attached; after the client leaves, it's reported unavailable within a few seconds, and a waiting job fails or waits cleanly | pending |
 | D-07 | Two clients attached at once: shared state (a note, a chat) updates in both without corruption; per-client state stays separate | pending |
 | D-08 | The window keeps its own settings per device today (`ferry.json`) | implemented, untested |
+| D-09 | A browser client on another device reaches the island through the gateway with its individual credential; an unpaired origin is refused | pending (needs the gateway) |
+| D-10 | A client keeps no authoritative copy: clearing its browser storage loses only presentation and caches, and nothing of the island's | pending |
